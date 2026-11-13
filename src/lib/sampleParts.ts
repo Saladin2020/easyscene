@@ -207,10 +207,18 @@ function waterBand(img: RgbaImage, water: Rgb[], shimmer: Rgb, seed: number, gli
     }
   }
   if (glints) {
-    for (let y = WATER_Y + 2; y < H; y += 2) {
-      const half = Math.round((glints.w / 2) * (0.6 + 0.6 * ((y - WATER_Y) / (H - WATER_Y))));
-      const jitter = Math.round((hash(y, 3, seed) - 0.5) * 6);
-      for (let dx = -half; dx <= half; dx++) if (hash(glints.x + dx, y, seed + 7) > 0.35) setWrap(img, glints.x + dx + jitter, y, glints.c);
+    // Pits can open anywhere, so the reflection is spread as sparkles that only thicken under the light source.
+    const soft = mix(glints.c, water[water.length - 1]!, 0.45);
+    for (let y = WATER_Y + 2; y < H - 1; y += 2) {
+      const r = rng(seed * 977 + y);
+      let x = Math.floor(r() * 12);
+      while (x < W) {
+        const len = 1 + Math.floor(r() * 4);
+        const dist = Math.min(Math.abs(x - glints.x), W - Math.abs(x - glints.x)) / (glints.w * 2);
+        const near = Math.exp(-dist * dist);
+        if (r() < 0.1 + 0.6 * near) for (let k = 0; k < len; k++) setWrap(img, x + k, y, near > 0.5 ? glints.c : soft);
+        x += len + 3 + Math.floor(r() * 14);
+      }
     }
   }
 }

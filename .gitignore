@@ -1,0 +1,14 @@
+node_modules/
+dist/
+web/dist/
+exports/
+parts/
+scenes/
+easyscene.config.json
+easyscene.allowed-dirs.json
+*.log
+.DS_Store
+.env
+.env.*
+.cursor/
+*.local.json

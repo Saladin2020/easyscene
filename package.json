@@ -1,0 +1,54 @@
+{
+  "name": "easyscene",
+  "version": "0.1.0",
+  "description": "Local CLI + web tool for composing side-view pixel-art game scenes from modular parts",
+  "type": "module",
+  "bin": {
+    "easyscene": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts serve --dev",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsup src/cli.ts src/mcp/server.ts --format esm --dts --clean --out-dir dist",
+    "build:web": "vite build --config web/vite.config.ts",
+    "serve": "tsx src/cli.ts serve",
+    "desktop": "tsx src/cli.ts desktop",
+    "mcp": "tsx src/mcp/server.ts",
+    "mcp:http": "tsx src/mcp/server.ts --http --port 8796",
+    "init": "tsx src/cli.ts init",
+    "icons": "node scripts/write-icons.mjs",
+    "capture:ui": "node scripts/capture-ui.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "smoke:tools": "node scripts/smoke-mcp-tools.mjs",
+    "smoke:compose": "tsx scripts/smoke-cli-compose.mjs",
+    "smoke": "npm run smoke:tools && npm run smoke:compose"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.8",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "commander": "^14.0.0",
+    "hono": "^4.8.3",
+    "open": "^10.1.2",
+    "pngjs": "^7.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "license": "MIT"
+}

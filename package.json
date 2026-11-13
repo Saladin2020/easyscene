@@ -23,7 +23,8 @@
     "test": "vitest run",
     "smoke:tools": "node scripts/smoke-mcp-tools.mjs",
     "smoke:compose": "tsx scripts/smoke-cli-compose.mjs",
-    "smoke": "npm run smoke:tools && npm run smoke:compose"
+    "smoke": "npm run smoke:tools && npm run smoke:compose",
+    "catalog": "tsx scripts/render-catalog.ts"
   },
   "engines": {
     "node": ">=20"

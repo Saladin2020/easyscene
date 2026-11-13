@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { snapBuildingX } from "../../../src/shared/scene";
 import { setTile, surfaceBelow } from "../../../src/shared/tiles";
 import { drawScene, type LoadedPart } from "../draw";
 import type { SceneDoc, TileCode } from "../types";
@@ -27,6 +28,17 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
   const hoverKey = hover ? `${hover.x},${hover.y}` : "";
   // only the prop ghost follows the cursor per pixel; everything else redraws per tile
   const ghostKey = tool.kind === "prop" && hoverPx ? `${Math.round(hoverPx.x)},${Math.round(hoverPx.y)}` : "";
+
+  /** Buildings snap to neighbouring buildings' edges, else to the tile grid (hold Shift for free placement). */
+  const snapX = (partId: string, rawLeft: number, free: boolean, skip: number | null = null): number => {
+    const m = parts.get(partId)?.meta;
+    if (!m || free) return Math.round(rawLeft);
+    const neighbours = doc.props.flatMap((p, i) => {
+      const pm = parts.get(p.part)?.meta;
+      return i !== skip && pm?.kind === "prop" && pm.category === "building" ? [{ x: p.x, width: pm.width }] : [];
+    });
+    return snapBuildingX(m, rawLeft, doc.tileSize, neighbours);
+  };
 
   useEffect(() => {
     onHover?.(hover);
@@ -66,7 +78,7 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
     if (hoverPx && tool.kind === "prop" && propPart && !drag.current) {
       const part = parts.get(propPart);
       if (part) {
-        const gx = Math.round(hoverPx.x - part.meta.width / 2);
+        const gx = snapX(propPart, hoverPx.x - part.meta.width / 2, false);
         const gy = surfaceBelow(doc.tiles, Math.floor(hoverPx.x / ts), ts, hoverPx.y);
         ctx.globalAlpha = 0.55;
         ctx.imageSmoothingEnabled = false;
@@ -135,7 +147,7 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
     } else if (tool.kind === "prop" && propPart) {
       const m = parts.get(propPart)?.meta;
       if (!m) return;
-      const px = Math.round(x - m.width / 2);
+      const px = snapX(propPart, x - m.width / 2, e.shiftKey);
       const py = e.shiftKey ? Math.round(y) : surfaceBelow(doc.tiles, Math.floor(x / ts), ts, y);
       const props = [...doc.props, { part: propPart, x: px, y: py }];
       onChange({ ...doc, props });
@@ -154,7 +166,7 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
     if (drag.current.mode === "paint") paint(x, y);
     else if (selected !== null) {
       const props = doc.props.map((p, i) =>
-        i === selected ? { ...p, x: Math.round(x - drag.current!.dx), y: Math.round(y - drag.current!.dy) } : p,
+        i === selected ? { ...p, x: snapX(p.part, x - drag.current!.dx, e.shiftKey, i), y: Math.round(y - drag.current!.dy) } : p,
       );
       onChange({ ...doc, props });
     }

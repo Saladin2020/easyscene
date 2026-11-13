@@ -1088,6 +1088,60 @@ canvas.pixel {
   gap: 0.4rem;
 }
 
+.prop-grid.wide {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+.prop-grid.wide .prop-btn {
+  grid-template-rows: 78px auto;
+}
+.prop-grid.wide .prop-img {
+  height: 78px;
+}
+.prop-grid.wide .prop-btn img {
+  max-height: 72px;
+}
+
+.prop-filter {
+  width: 100%;
+  margin: 0 0 0.6rem;
+}
+
+.prop-group {
+  margin: 0 0 0.6rem;
+}
+.prop-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.45rem;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  list-style: none;
+}
+.prop-group > summary::-webkit-details-marker {
+  display: none;
+}
+.prop-group > summary::before {
+  content: "▸";
+  color: var(--accent);
+  transition: transform 0.12s;
+}
+.prop-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+.prop-group > summary .hint {
+  margin-left: auto;
+  font-size: 0.6rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+
 .prop-btn {
   display: grid;
   grid-template-rows: 54px auto;

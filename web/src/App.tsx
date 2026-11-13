@@ -8,6 +8,8 @@ import { rangeFill } from "./ui";
 import {
   DEFAULT_SCROLL,
   EXPORT_PRESETS,
+  PROP_CATEGORIES,
+  PROP_CATEGORY_LABELS,
   TILE_CODES,
   TILE_CODE_LABELS,
   type BackgroundPart,
@@ -17,6 +19,7 @@ import {
   type SceneLayer,
   type TileCode,
   type WorkspaceSummary,
+  propCategory,
 } from "./types";
 
 const LS_EXPORT_DIR = "easyscene.exportDir";
@@ -118,6 +121,12 @@ export function App() {
   const backgrounds = useMemo(() => ws?.parts.filter((p): p is BackgroundPart => p.kind === "background") ?? [], [ws]);
   const tilesets = useMemo(() => ws?.parts.filter((p) => p.kind === "tileset") ?? [], [ws]);
   const props = useMemo(() => ws?.parts.filter((p) => p.kind === "prop") ?? [], [ws]);
+  const [propQuery, setPropQuery] = useState("");
+  const propGroups = useMemo(() => {
+    const q = propQuery.trim().toLowerCase();
+    const shown = props.filter((p) => !q || [p.id, p.name, ...(p.tags ?? [])].some((s) => s.toLowerCase().includes(q)));
+    return PROP_CATEGORIES.map((cat) => ({ cat, items: shown.filter((p) => p.kind === "prop" && propCategory(p) === cat) })).filter((g) => g.items.length > 0);
+  }, [props, propQuery]);
 
   const update = (next: SceneDoc) => {
     setDoc(next);
@@ -468,15 +477,26 @@ export function App() {
           <h2>
             <span className="step">4</span>Props <small>{props.length} parts</small>
           </h2>
-          <div className="prop-grid">
-            {props.map((p: PartMeta) => (
-              <button type="button" key={p.id} className={`prop-btn${propPart === p.id ? " active" : ""}`} title={p.id}
-                onClick={() => { setPropPart(p.id); setTool({ kind: "prop" }); }}>
-                <span className="prop-img"><img src={partImageUrl(p.id)} alt="" /></span>
-                <span className="prop-name">{p.name}</span>
-              </button>
-            ))}
-          </div>
+          <input className="prop-filter" type="search" placeholder="Filter props…" aria-label="Filter props" value={propQuery}
+            onChange={(e) => setPropQuery(e.target.value)} />
+          {propGroups.map(({ cat, items }) => (
+            <details key={cat} className="prop-group" open>
+              <summary>
+                {PROP_CATEGORY_LABELS[cat]} <span className="count">{items.length}</span>
+                {cat === "building" && <small className="hint">snap edge to edge · Shift = free</small>}
+              </summary>
+              <div className={`prop-grid${cat === "building" ? " wide" : ""}`}>
+                {items.map((p: PartMeta) => (
+                  <button type="button" key={p.id} className={`prop-btn${propPart === p.id ? " active" : ""}`} title={`${p.id} · ${p.width}×${p.height}`}
+                    onClick={() => { setPropPart(p.id); setTool({ kind: "prop" }); }}>
+                    <span className="prop-img"><img src={partImageUrl(p.id)} alt="" /></span>
+                    <span className="prop-name">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          ))}
+          {propGroups.length === 0 && <p className="empty">No props match “{propQuery}”.</p>}
           <h3 className="sub-head">Placed <span className="count">{doc.props.length}</span></h3>
           {doc.props.length === 0 ? (
             <p className="empty">Nothing placed yet. Pick a prop above, then click on the scene.</p>

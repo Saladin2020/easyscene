@@ -15,6 +15,8 @@ import { initWorkspace, loadParts, loadScene, partImagePath } from "../src/lib/w
 import { readPng } from "../src/lib/png.js";
 import { createImage, type RgbaImage } from "../src/shared/raster.js";
 import { renderParallaxStrip, renderScene } from "../src/shared/render.js";
+import { PROP_CATEGORIES, propCategory, type PropPart } from "../src/shared/types.js";
+import { renderCatalog } from "./catalog.js";
 
 const args = process.argv.slice(2);
 const ci = args.indexOf("--character");
@@ -77,6 +79,12 @@ try {
 
   const night = await loadScene(root, "lantern_night");
   await writePng(path.join(outDir, "lantern-night.png"), renderScene(night, await loadAssets(root, night), { character: sheet && characterSprite(sheet, 300) }));
+
+  const street = await loadScene(root, "thai_village_street");
+  await writePng(path.join(outDir, "thai-village-street.png"), renderScene(street, await loadAssets(root, street), { character: sheet && characterSprite(sheet, 560) }));
+  const townProps = (await loadParts(root)).filter((p): p is PropPart => p.kind === "prop");
+  const ordered = PROP_CATEGORIES.flatMap((c) => townProps.filter((p) => propCategory(p) === c));
+  await writePng(path.join(outDir, "thai-town-catalog.png"), await renderCatalog(root, ordered, { maxWidth: 1000 }));
 
   const grass = (await loadParts(root)).find((p) => p.id === "tiles_grass")!;
   await writePng(path.join(outDir, "tileset-grass.png"), upscale(await readPng(partImagePath(root, grass)), 4));

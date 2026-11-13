@@ -26,6 +26,21 @@ export interface ComposePropInput extends Partial<SceneProp> {
   x: number;
 }
 
+/** One building in a street row: a part id, or an object with per-building options. */
+export type StreetItem = string | (Omit<ComposePropInput, "x"> & { /** Extra px before this item (default 0). */ gapBefore?: number });
+
+/**
+ * A row of props placed edge to edge from `x` (snapped to the tile grid): each next item starts
+ * where the previous one ends (`x += width + gap`). Made for `category: "building"` parts.
+ */
+export interface ComposeStreetInput {
+  /** Left edge of the first item in px (default 0; snapped down to the tile grid). */
+  x?: number;
+  /** px between items (default 0 = touching). */
+  gap?: number;
+  items: StreetItem[];
+}
+
 export interface ComposeSceneInput {
   id: string;
   name?: string;
@@ -40,8 +55,65 @@ export interface ComposeSceneInput {
   tiles?: string[];
   terrain?: Omit<TerrainSpec, "width" | "height">;
   props?: ComposePropInput[];
+  /** Rows of buildings chained edge to edge; expanded into `props` (drawn before them). */
+  streets?: ComposeStreetInput[];
   collision?: CollisionRect[];
   character?: { sheet: string; x?: number };
+}
+
+/**
+ * Expand a street row into props with explicit x. Unknown / non-prop parts are skipped with a warning
+ * and take no space. Pure: the saved scene only ever contains plain props.
+ */
+export function layoutStreet(
+  parts: readonly PartMeta[],
+  street: ComposeStreetInput,
+  tileSize = DEFAULT_CONFIG.tileSize,
+): { props: ComposePropInput[]; warnings: string[]; endX: number } {
+  const byId = new Map(parts.map((p) => [p.id, p]));
+  const warnings: string[] = [];
+  const props: ComposePropInput[] = [];
+  let x = Math.floor((Number.isFinite(street.x) ? street.x! : 0) / tileSize) * tileSize;
+  const gap = Number.isFinite(street.gap) ? Math.round(street.gap!) : 0;
+  for (const [i, raw] of street.items.entries()) {
+    const item = typeof raw === "string" ? { part: raw } : raw;
+    const meta = byId.get(item.part);
+    if (!meta || meta.kind !== "prop") {
+      warnings.push(`Street item "${item.part}": not a prop part (use list_parts kind=prop category=building)`);
+      continue;
+    }
+    if (meta.width % tileSize !== 0) warnings.push(`Street item "${item.part}" is ${meta.width}px wide (not a multiple of ${tileSize}); neighbours will be off-grid`);
+    const { gapBefore, ...rest } = item as Exclude<StreetItem, string>;
+    if (i > 0) x += gap;
+    if (typeof gapBefore === "number" && Number.isFinite(gapBefore)) x += Math.round(gapBefore);
+    props.push({ ...rest, x });
+    x += meta.width;
+  }
+  return { props, warnings, endX: x };
+}
+
+/**
+ * Snap a building's left edge for the editor: to a neighbouring building's edge when within
+ * `tolerance` px (so they touch without a gap or overlap), otherwise to the tile grid.
+ * Non-building props are returned unchanged.
+ */
+export function snapBuildingX(
+  meta: Pick<PartMeta, "kind" | "width"> & { category?: string },
+  rawLeft: number,
+  tileSize: number,
+  neighbours: ReadonlyArray<{ x: number; width: number }>,
+  tolerance = 8,
+): number {
+  if (meta.kind !== "prop" || meta.category !== "building") return Math.round(rawLeft);
+  let best = Math.round(rawLeft / tileSize) * tileSize;
+  let bestD = Infinity;
+  for (const n of neighbours) {
+    for (const edge of [n.x + n.width, n.x - meta.width]) {
+      const d = Math.abs(rawLeft - edge);
+      if (d <= tolerance && d < bestD) [best, bestD] = [edge, d];
+    }
+  }
+  return best;
 }
 
 export const DEFAULT_LAYERS = ["bg_sky_day", "bg_far_mountains", "bg_mid_forest", "bg_near_bushes"];
@@ -139,9 +211,16 @@ export function composeScene(
     if (!explicitOffset[i] && meta.band !== "sky" && autoOffset !== 0) layer.offsetY = autoOffset;
   }
 
-  // ---- props ----
+  // ---- props (street rows first so they draw behind loose props) ----
+  const streetProps: ComposePropInput[] = [];
+  for (const street of input.streets ?? []) {
+    if (!street || !Array.isArray(street.items)) continue;
+    const res = layoutStreet(parts, street, tileSize);
+    streetProps.push(...res.props);
+    warnings.push(...res.warnings);
+  }
   const props: SceneProp[] = [];
-  for (const p of input.props ?? []) {
+  for (const p of [...streetProps, ...(input.props ?? [])]) {
     const meta = byId.get(p.part);
     if (!meta || meta.kind !== "prop") {
       warnings.push(`Skipped prop "${p.part}": not a prop part (use list_parts kind=prop)`);

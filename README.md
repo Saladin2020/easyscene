@@ -32,7 +32,7 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
 
 | Parallax | Tiles | Props |
 | --- | --- | --- |
-| sky (day · dusk · night) · far clouds / mountains · mid hills / forest · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone | oak · pine · stilt house · fence · sign · rock · bush · lantern |
+| sky (day · dusk · night) · far clouds / mountains / temple hill · mid hills / forest / tropical town · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone · sidewalk + laterite | grouped by category: **buildings** (Thai town set + stilt house) · **street** (power poles, flag pole, signposts, motorbike, dog, cat, lantern) · **nature** · **water** (pier, canal boat) · **decor** |
 
 <p align="center">
   <img src="docs/assets/forest-evening-parallax.png" width="420" alt="Three camera positions showing parallax depth with an Easy Sprite side-view walker" />
@@ -47,7 +47,21 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
   <img src="docs/assets/lantern-night.png" width="720" alt="Lantern night demo scene with the night sky and grass tileset" />
 </p>
 
-The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Three themes ship as demo scenes: `village_day`, `forest_evening` and `lantern_night` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing).
+### Thai town street
+
+Modular Thai-style buildings that chain into a town: noodle shop, mini mart (generic striped fascia, no brand), fruit stall, 2–3 floor shophouses (café, garage, pharmacy, gold shop) and a teak stilt house, plus power poles whose wires join pole to pole, a Thai flag pole, a Thai signpost, potted plants, flower boxes, a motorbike, a dog and a cat, a canal pier and a long-tail boat. The demo scene `thai_village_street` puts them in a row on the new `tiles_street` sidewalk, with `bg_far_temple_hill` and `bg_mid_tropical` behind and a canal at the end.
+
+<p align="center">
+  <img src="docs/assets/thai-village-street.png" width="900" alt="Thai village street demo: teak house, fruit stall, noodle shop, shophouses, mini mart, power poles and a canal with a pier" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/thai-town-catalog.png" width="900" alt="Labeled catalog of every sample prop, grouped by category" />
+</p>
+
+Building rules (any `category: "building"` prop, yours too): width is a multiple of 16, the art reaches both edges of its footprint and the bottom row is the ground line. So a row chains with `x += width`; `streets` in a compose recipe does it for you (`--street 0:prop_bld_thai_house,prop_bld_noodle_shop,…` on the CLI), and in the editor a dragged building snaps to its neighbour's edge (Shift places freely). Thai sign text is pre-rasterized from **Kanit** (SIL OFL 1.1) by `scripts/gen-thai-signs.py`, so no font ships at runtime. `npx tsx scripts/render-catalog.ts <outDir>` renders the street, 3× crops and this catalog.
+
+The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Four themes ship as demo scenes: `village_day`, `forest_evening`, `lantern_night` and `thai_village_street` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing).
 
 ---
 
@@ -77,12 +91,14 @@ npm run dev
 ```bash
 npx tsx src/cli.ts info
 npx tsx src/cli.ts parts --kind background
+npx tsx src/cli.ts parts --category building
 npx tsx src/cli.ts compose --id forest_evening --name "Forest evening" --width 72 \
   --layers bg_sky_dusk,bg_far_clouds,bg_far_mountains,bg_mid_forest,bg_near_bushes \
   --color bg_far_mountains=#6a4f8a --tint bg_far_clouds=#ff9a7a@0.4 \
   --tint bg_mid_forest=#e08a8a@0.35 --tint bg_near_bushes=#ff9a6a@0.25 \
   --ground 3 --hill 30,6,2 --pit 46,3 --platform 19,3,5 --platform 44,3,6 \
   --prop prop_house@150 --prop prop_tree_pine@520,flip --prop prop_bush@980,front \
+  --street 1200:prop_bld_noodle_shop,prop_bld_shophouse_2f \
   --character ../easysprite/exports/walker_side.png \
   --export all --out ./my-exports
 npx tsx src/cli.ts export --id forest_evening --preset godot --out ./my-exports
@@ -113,6 +129,7 @@ Point the preview at any Easy Sprite **side-view** native sheet (1440×144 · ro
 
 - Parallax builder: up to 5 layers, per-layer scroll factor, seamless horizontal looping, hue recolor (same algorithm as Easy Sprite) and multiply tint
 - 16px side-view tiles: edge-aware autotile, one-way platforms with end caps, slopes, terrain builder (`groundHeight`, `hills`, `pits`, `platforms`)
+- Modular buildings: `streets` chain a row of buildings edge to edge on the 16px grid; the props panel groups parts by category with a filter
 - Editor: paint tiles on a grid, place / drag / flip / recolor props, live game-camera preview with play / scrub / speed
 - Collision from tiles + prop boxes + hand-drawn rects
 - **MCP** tools for agents — compose and export without clicking ([docs/MCP.md](docs/MCP.md))
@@ -135,6 +152,7 @@ npm run smoke            # MCP + CLI smoke tests (run npm run init first)
 npm run icons            # re-bake favicon / PWA icons
 npm run capture:ui       # headless Chrome screenshot of the running UI
 npm run docs:images      # re-render the README art in docs/assets (-- --character sheet.png)
+npm run catalog          # Thai town street + labeled prop catalog (-- <outDir> --character sheet.png)
 ```
 
 ### Security

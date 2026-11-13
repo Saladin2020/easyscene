@@ -69,6 +69,46 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
       { part: "prop_bush", x: 800, tint: "#2a3a6a", tintAmount: 0.55 },
     ],
   },
+  {
+    id: "thai_village_street",
+    name: "Thai village street",
+    width: 88,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_far_temple_hill", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3, pits: [{ x: 70, width: 18 }] },
+    streets: [
+      {
+        x: 0,
+        items: [
+          "prop_bld_thai_house",
+          "prop_bld_fruit_stall",
+          "prop_bld_noodle_shop",
+          "prop_bld_shophouse_2f",
+          "prop_bld_shophouse_3f",
+          "prop_bld_shophouse_3f_gold",
+          "prop_bld_shophouse_2f_closed",
+          "prop_bld_mini_mart",
+        ],
+      },
+      // power poles every 240 px: wires meet at the sprite edges, so the run is continuous;
+      // the end-of-line pole closes it (flipped at the start)
+      { x: 0, items: [{ part: "prop_power_pole_end", flipX: true }, "prop_power_pole", "prop_power_pole", "prop_power_pole_end"] },
+    ],
+    props: [
+      { part: "prop_street_dog", x: 300 },
+      { part: "prop_motorbike", x: 404 },
+      { part: "prop_potted_plants", x: 470 },
+      { part: "prop_flower_box", x: 592 },
+      { part: "prop_cat", x: 742 },
+      { part: "prop_potted_plants", x: 812 },
+      { part: "prop_flower_box", x: 900 },
+      { part: "prop_flag_pole", x: 958 },
+      { part: "prop_signpost_th", x: 1000 },
+      { part: "prop_lantern", x: 1060 },
+      { part: "prop_pier", x: 1120 },
+      { part: "prop_canal_boat", x: 1236, y: 238 },
+    ],
+  },
 ];
 
 export function demoScenes(parts: PartMeta[] = sampleDefs().map((d) => d.meta)): SceneDoc[] {

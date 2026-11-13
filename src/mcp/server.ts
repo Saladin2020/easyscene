@@ -15,7 +15,7 @@ import path from "node:path";
 import { z } from "zod";
 import { OPERATOR_PROMPT_DESCRIPTION, buildOperatorPrompt } from "../shared/operatorPrompt.js";
 import { renderParallaxStrip, renderScene } from "../shared/render.js";
-import { DEFAULT_SCROLL, EXPORT_PRESETS, LAYER_BANDS, TILE_CODE_LABELS } from "../shared/types.js";
+import { DEFAULT_SCROLL, EXPORT_PRESETS, LAYER_BANDS, PROP_CATEGORIES, TILE_CODE_LABELS, propCategory } from "../shared/types.js";
 import { checkRequest, resolveToken } from "../shared/requestGuard.js";
 import { characterSprite, composeAndSave, loadAssets, loadCharacterSheet } from "../lib/compose.js";
 import { exportScene } from "../lib/export.js";
@@ -77,6 +77,15 @@ const PropSchema = z.object({
   tintAmount: z.number().min(0).max(1).optional(),
 });
 
+const StreetSchema = z.object({
+  x: z.number().optional().describe("Left edge of the first building in px (snapped to the tile grid, default 0)"),
+  gap: z.number().optional().describe("px between buildings (default 0 = touching)"),
+  items: z.array(z.union([
+    z.string(),
+    PropSchema.omit({ x: true }).extend({ gapBefore: z.number().optional().describe("Extra px before this item") }),
+  ])).min(1).describe("Prop ids (or objects with flipX/color/tint) placed left to right"),
+});
+
 const TerrainSchema = z.object({
   groundHeight: z.number().int().min(0).optional().describe("Solid rows at the bottom (default 3)"),
   hills: z.array(z.object({ x: z.number().int(), width: z.number().int().min(1), height: z.number().int().min(1) })).optional()
@@ -117,6 +126,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
           tileset: s.parts.filter((p) => p.kind === "tileset").length,
           prop: s.parts.filter((p) => p.kind === "prop").length,
         },
+        propCategories: PROP_CATEGORIES,
         sceneCount: s.scenes.length,
         note: "Compose only — use part ids from list_parts. Layers back→front (sky, far, mid, near), max 5.",
       });
@@ -127,18 +137,21 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
     "list_parts",
     {
       title: "List parts",
-      description: "List scene parts: background layers (with band + default scroll), tilesets, and props (with size). Filter by kind, band or query.",
+      description:
+        "List scene parts: background layers (with band + default scroll), tilesets, and props (with size and category). Filter by kind, band, category or query. category=building lists modular buildings (16 px-grid widths, chain them with compose_scene streets).",
       inputSchema: {
         kind: z.enum(["background", "tileset", "prop"]).optional(),
         band: z.enum(["sky", "far", "mid", "near"]).optional().describe("Background band filter"),
+        category: z.enum(PROP_CATEGORIES as [string, ...string[]]).optional().describe("Prop category filter: building | street | nature | water | decor"),
         query: z.string().optional().describe("Case-insensitive match on id, name or tags"),
       },
     },
-    async ({ kind, band, query }) => {
+    async ({ kind, band, category, query }) => {
       const q = query?.trim().toLowerCase() ?? "";
       const parts = (await loadParts(root)).filter((p) => {
         if (kind && p.kind !== kind) return false;
         if (band && (p.kind !== "background" || p.band !== band)) return false;
+        if (category && (p.kind !== "prop" || propCategory(p) !== category)) return false;
         if (q && ![p.id, p.name, ...(p.tags ?? [])].some((s) => s.toLowerCase().includes(q))) return false;
         return true;
       });
@@ -150,7 +163,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
           name: p.name,
           size: `${p.width}x${p.height}`,
           ...(p.kind === "background" ? { band: p.band, defaultScroll: p.defaultScroll, loopWidth: p.loopWidth } : {}),
-          ...(p.kind === "prop" ? { defaultLayer: p.defaultLayer } : {}),
+          ...(p.kind === "prop" ? { defaultLayer: p.defaultLayer, category: propCategory(p) } : {}),
           ...(p.kind === "tileset" ? { tileSize: p.tileSize } : {}),
           recolorBase: p.recolorBase ?? null,
           tags: p.tags,
@@ -195,7 +208,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
     {
       title: "Compose scene",
       description:
-        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground.",
+        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground. `streets` chains modular buildings edge to edge into a town row.",
       inputSchema: {
         id: SceneIdSchema.describe("Scene id slug, e.g. forest_evening"),
         name: z.string().optional(),
@@ -206,6 +219,8 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         terrain: TerrainSchema.optional(),
         tiles: z.array(z.string()).optional().describe("Explicit tile rows using . # = / \\ (wins over terrain)"),
         props: z.array(PropSchema).optional(),
+        streets: z.array(StreetSchema).optional()
+          .describe("Rows of buildings placed edge to edge (x += width) from x; expanded into props drawn behind the loose props"),
         collision: z.array(z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), oneWay: z.boolean().optional() })).optional()
           .describe("Extra collision rects in px"),
         character: z.object({ sheet: z.string(), x: z.number().optional() }).optional()

@@ -45,6 +45,7 @@ export async function initWorkspace(cwd = process.cwd(), options?: { forceSample
   }
   const hasParts = (await readdir(partsDir)).some((f) => !f.startsWith("CREDITS"));
   if (!hasParts || options?.forceSamples) await writeSampleParts(root);
+  else await writeSampleParts(root, { onlyMissing: true }); // new sample parts after an upgrade; existing folders untouched
 
   const hasScenes = (await readdir(scenesDir)).some((f) => f.endsWith(".json"));
   if (!hasScenes || options?.forceSamples) {

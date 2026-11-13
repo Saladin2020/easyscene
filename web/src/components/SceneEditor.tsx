@@ -15,13 +15,23 @@ interface Props {
   showGrid: boolean;
   onChange: (doc: SceneDoc) => void;
   onSelect: (index: number | null) => void;
+  onHover?: (tile: { x: number; y: number } | null) => void;
 }
 
 /** Full-level editor canvas: paint tiles, place and drag props. */
-export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGrid, onChange, onSelect }: Props) {
+export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGrid, onChange, onSelect, onHover }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ mode: "paint" | "move"; dx: number; dy: number } | null>(null);
-  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const [hoverPx, setHoverPx] = useState<{ x: number; y: number } | null>(null);
+  const hover = hoverPx && { x: Math.floor(hoverPx.x / doc.tileSize), y: Math.floor(hoverPx.y / doc.tileSize) };
+  const hoverKey = hover ? `${hover.x},${hover.y}` : "";
+  // only the prop ghost follows the cursor per pixel; everything else redraws per tile
+  const ghostKey = tool.kind === "prop" && hoverPx ? `${Math.round(hoverPx.x)},${Math.round(hoverPx.y)}` : "";
+
+  useEffect(() => {
+    onHover?.(hover);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoverKey]);
   const ts = doc.tileSize;
   const W = doc.width * ts;
   const H = doc.height * ts;
@@ -36,34 +46,62 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
     drawScene(ctx, doc, parts, 0, 0, W, H);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (showGrid) {
-      ctx.strokeStyle = "rgba(255,240,200,0.12)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let x = 0; x <= doc.width; x++) {
-        ctx.moveTo(x * ts * zoom + 0.5, 0);
-        ctx.lineTo(x * ts * zoom + 0.5, H * zoom);
+      for (const major of [false, true]) {
+        ctx.strokeStyle = major ? "rgba(255,226,170,0.16)" : "rgba(255,240,200,0.07)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= doc.width; x++) {
+          if ((x % 4 === 0) !== major) continue;
+          ctx.moveTo(x * ts * zoom + 0.5, 0);
+          ctx.lineTo(x * ts * zoom + 0.5, H * zoom);
+        }
+        for (let y = 0; y <= doc.height; y++) {
+          if (((doc.height - y) % 4 === 0) !== major) continue;
+          ctx.moveTo(0, y * ts * zoom + 0.5);
+          ctx.lineTo(W * zoom, y * ts * zoom + 0.5);
+        }
+        ctx.stroke();
       }
-      for (let y = 0; y <= doc.height; y++) {
-        ctx.moveTo(0, y * ts * zoom + 0.5);
-        ctx.lineTo(W * zoom, y * ts * zoom + 0.5);
+    }
+    if (hoverPx && tool.kind === "prop" && propPart && !drag.current) {
+      const part = parts.get(propPart);
+      if (part) {
+        const gx = Math.round(hoverPx.x - part.meta.width / 2);
+        const gy = surfaceBelow(doc.tiles, Math.floor(hoverPx.x / ts), ts, hoverPx.y);
+        ctx.globalAlpha = 0.55;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(part.canvas, gx * zoom, (gy - part.meta.height) * zoom, part.meta.width * zoom, part.meta.height * zoom);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "#ffd27a";
+        ctx.fillRect(gx * zoom, gy * zoom - 1, part.meta.width * zoom, 2);
       }
-      ctx.stroke();
     }
     if (selected !== null && doc.props[selected]) {
       const p = doc.props[selected]!;
       const meta = parts.get(p.part)?.meta;
       if (meta) {
-        ctx.strokeStyle = "#f4ae3d";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(p.x * zoom, (p.y - meta.height) * zoom, meta.width * zoom, meta.height * zoom);
+        const [x, y, w, h] = [p.x * zoom - 1.5, (p.y - meta.height) * zoom - 1.5, meta.width * zoom + 3, meta.height * zoom + 3];
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(13,9,6,0.85)";
+        ctx.strokeRect(x, y, w, h);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = "#ffd27a";
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#f4ae3d";
+        for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]] as const) ctx.fillRect(hx - 2, hy - 2, 4, 4);
       }
     }
     if (hover && tool.kind === "tile") {
-      ctx.strokeStyle = "#ffd27a";
+      const [x, y, s] = [hover.x * ts * zoom, hover.y * ts * zoom, ts * zoom];
+      ctx.fillStyle = tool.code === "." ? "rgba(229,128,108,0.22)" : "rgba(255,210,122,0.18)";
+      ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = tool.code === "." ? "#e5806c" : "#ffd27a";
       ctx.lineWidth = 2;
-      ctx.strokeRect(hover.x * ts * zoom + 1, hover.y * ts * zoom + 1, ts * zoom - 2, ts * zoom - 2);
+      ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
     }
-  }, [doc, parts, zoom, showGrid, selected, hover, tool, W, H, ts]);
+  }, [doc, parts, zoom, showGrid, selected, hoverKey, ghostKey, tool, propPart, W, H, ts]);
 
   const toWorld = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
@@ -111,7 +149,7 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
 
   const onMove = (e: React.PointerEvent) => {
     const { x, y } = toWorld(e);
-    setHover({ x: Math.floor(x / ts), y: Math.floor(y / ts) });
+    setHoverPx({ x, y });
     if (!drag.current) return;
     if (drag.current.mode === "paint") paint(x, y);
     else if (selected !== null) {
@@ -127,11 +165,11 @@ export function SceneEditor({ doc, parts, tool, propPart, selected, zoom, showGr
       <canvas
         ref={ref}
         className="pixel"
-        style={{ width: W * zoom, height: H * zoom, cursor: tool.kind === "select" ? "default" : "crosshair" }}
+        style={{ width: W * zoom, height: H * zoom, cursor: tool.kind === "select" ? (hoverPx && hitProp(hoverPx.x, hoverPx.y) !== null ? "move" : "default") : "crosshair" }}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={() => (drag.current = null)}
-        onPointerLeave={() => setHover(null)}
+        onPointerLeave={() => setHoverPx(null)}
         onContextMenu={(e) => e.preventDefault()}
       />
     </div>

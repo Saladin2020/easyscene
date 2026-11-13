@@ -43,6 +43,32 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
       { part: "prop_sign", x: 420 },
     ],
   },
+  {
+    id: "lantern_night",
+    name: "Lantern night",
+    width: 56,
+    layers: [
+      "bg_sky_night",
+      { part: "bg_far_mountains", tint: "#3a4a8a", tintAmount: 0.55 },
+      { part: "bg_mid_forest", tint: "#2a3a6a", tintAmount: 0.6 },
+      { part: "bg_near_bushes", tint: "#2a3a6a", tintAmount: 0.55 },
+    ],
+    tileset: "tiles_grass_night",
+    terrain: { groundHeight: 3, hills: [{ x: 30, width: 6, height: 2 }], pits: [{ x: 22, width: 3 }], platforms: [{ x: 21, y: 3, length: 5 }] },
+    props: [
+      { part: "prop_tree_pine", x: 30, tint: "#2a3a6a", tintAmount: 0.55 },
+      { part: "prop_lantern", x: 100 },
+      { part: "prop_house", x: 128, tint: "#5a6aa0", tintAmount: 0.45 },
+      { part: "prop_lantern", x: 222 },
+      { part: "prop_fence", x: 250, tint: "#3a4a8a", tintAmount: 0.5 },
+      { part: "prop_rock", x: 420, tint: "#3a4a8a", tintAmount: 0.5 },
+      { part: "prop_lantern", x: 520 },
+      { part: "prop_tree_oak", x: 640, tint: "#2a3a6a", tintAmount: 0.55 },
+      { part: "prop_sign", x: 720, tint: "#3a4a8a", tintAmount: 0.5 },
+      { part: "prop_lantern", x: 760 },
+      { part: "prop_bush", x: 800, tint: "#2a3a6a", tintAmount: 0.55 },
+    ],
+  },
 ];
 
 export function demoScenes(parts: PartMeta[] = sampleDefs().map((d) => d.meta)): SceneDoc[] {

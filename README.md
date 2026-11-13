@@ -32,7 +32,7 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
 
 | Parallax | Tiles | Props |
 | --- | --- | --- |
-| sky · far · mid · near, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes | oak · pine · stilt house · fence · sign · rock · bush · lantern |
+| sky (day · dusk · night) · far clouds / mountains · mid hills / forest · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone | oak · pine · stilt house · fence · sign · rock · bush · lantern |
 
 <p align="center">
   <img src="docs/assets/forest-evening-parallax.png" width="420" alt="Three camera positions showing parallax depth with an Easy Sprite side-view walker" />
@@ -42,6 +42,12 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
 <p align="center">
   <img src="docs/assets/village-day.png" width="720" alt="Village day demo scene" />
 </p>
+
+<p align="center">
+  <img src="docs/assets/lantern-night.png" width="720" alt="Lantern night demo scene with the night sky and grass tileset" />
+</p>
+
+The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Three themes ship as demo scenes: `village_day`, `forest_evening` and `lantern_night` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing).
 
 ---
 
@@ -73,8 +79,9 @@ npx tsx src/cli.ts info
 npx tsx src/cli.ts parts --kind background
 npx tsx src/cli.ts compose --id forest_evening --name "Forest evening" --width 72 \
   --layers bg_sky_dusk,bg_far_clouds,bg_far_mountains,bg_mid_forest,bg_near_bushes \
-  --color bg_far_mountains=#6a4f8a --tint bg_mid_forest=#ff9a6a@0.25 \
-  --ground 3 --hill 30,6,2 --pit 46,3 --platform 19,3,5 \
+  --color bg_far_mountains=#6a4f8a --tint bg_far_clouds=#ff9a7a@0.4 \
+  --tint bg_mid_forest=#e08a8a@0.35 --tint bg_near_bushes=#ff9a6a@0.25 \
+  --ground 3 --hill 30,6,2 --pit 46,3 --platform 19,3,5 --platform 44,3,6 \
   --prop prop_house@150 --prop prop_tree_pine@520,flip --prop prop_bush@980,front \
   --character ../easysprite/exports/walker_side.png \
   --export all --out ./my-exports
@@ -127,6 +134,7 @@ npm test                 # vitest unit tests
 npm run smoke            # MCP + CLI smoke tests (run npm run init first)
 npm run icons            # re-bake favicon / PWA icons
 npm run capture:ui       # headless Chrome screenshot of the running UI
+npm run docs:images      # re-render the README art in docs/assets (-- --character sheet.png)
 ```
 
 ### Security

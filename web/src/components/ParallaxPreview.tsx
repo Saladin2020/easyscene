@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { characterUrl } from "../api";
 import { drawScene, type LoadedPart } from "../draw";
+import { rangeFill } from "../ui";
 import type { SceneDoc } from "../types";
 
 interface Props {
@@ -15,6 +16,8 @@ interface Props {
  */
 export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1.5);
   const [camX, setCamX] = useState(0);
@@ -43,6 +46,20 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
     if (doc.character?.sheet) void loadSheet(characterUrl(doc.character.sheet), doc.character.sheet);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
+
+  // whole-number upscaling once there is room for 2×, so game pixels stay even squares
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const fit = () => {
+      const room = (el.clientWidth - 8) / vw;
+      setScale(room >= 2 ? Math.floor(room) : Math.max(0.5, Math.floor(room * 20) / 20));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [vw]);
 
   useEffect(() => {
     let raf = 0;
@@ -82,31 +99,39 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
 
   return (
     <div className="parallax-box">
-      <canvas ref={ref} className="pixel" width={vw} height={vh} style={{ aspectRatio: `${vw} / ${vh}` }} />
-      <div className="row" style={{ marginTop: "0.5rem" }}>
-        <button type="button" onClick={() => setPlaying((p) => !p)}>{playing ? "❚❚ Pause" : "▶ Play"}</button>
-        <label className="inline-field grow">
-          Camera x {camX}px
-          <input type="range" min={0} max={Math.max(0, mapW - vw)} value={camX} disabled={playing}
+      <div className="screen" ref={boxRef}>
+        <canvas ref={ref} className="pixel" width={vw} height={vh} style={{ width: Math.round(vw * scale), height: Math.round(vh * scale) }} />
+        <span className="screen-badge mono">{vw}×{vh} · {Number.isInteger(scale) ? scale : scale.toFixed(2)}×</span>
+      </div>
+      <div className="transport">
+        <button type="button" className={`play${playing ? " active" : ""}`} aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying((p) => !p)}>
+          {playing ? "❚❚" : "▶"}
+        </button>
+        <label className="slider grow">
+          <span>Camera</span>
+          <input type="range" min={0} max={Math.max(0, mapW - vw)} value={camX} disabled={playing} style={rangeFill(camX, 0, Math.max(1, mapW - vw))}
             onChange={(e) => { setCamX(Number(e.target.value)); state.current.cam = Number(e.target.value); }} />
+          <output>{camX}px</output>
         </label>
-        <label className="inline-field">
-          Speed
-          <input type="range" min={0.25} max={4} step={0.25} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+        <label className="slider speed">
+          <span>Speed</span>
+          <input type="range" min={0.25} max={4} step={0.25} value={speed} style={rangeFill(speed, 0.25, 4)} onChange={(e) => setSpeed(Number(e.target.value))} />
+          <output>{speed.toFixed(2)}×</output>
         </label>
       </div>
-      <div className="row" style={{ marginTop: "0.4rem" }}>
-        <input className="grow" placeholder="Easy Sprite side-view sheet path (.png, 1440×144)" value={sheetPath}
+      <form className="row nowrap char-row" onSubmit={(e) => { e.preventDefault(); if (sheetPath.trim()) void loadSheet(characterUrl(sheetPath.trim()), sheetPath.trim()); }}>
+        <span className="field-label">Walker</span>
+        <input className="grow" aria-label="Character sheet path" placeholder="Easy Sprite side-view sheet (.png, 1440×144)" value={sheetPath}
           onChange={(e) => setSheetPath(e.target.value)} />
-        <button type="button" disabled={!sheetPath.trim()} onClick={() => void loadSheet(characterUrl(sheetPath.trim()), sheetPath.trim())}>Load</button>
-        <label className="mini button-like">
-          <input type="file" accept="image/png" style={{ display: "none" }}
+        <button type="submit" disabled={!sheetPath.trim()}>Load</button>
+        <label className="file-btn">
+          <input type="file" accept="image/png"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadSheet(URL.createObjectURL(f), f.name); }} />
-          <span className="tag">or pick file</span>
+          Pick file…
         </label>
-        {sheet && <button type="button" className="mini" onClick={() => { setSheet(null); setMsg(""); }}>✕</button>}
-      </div>
-      {msg && <p className="hint">{msg}</p>}
+        {sheet && <button type="button" className="icon" aria-label="Remove character" title="Remove character" onClick={() => { setSheet(null); setMsg(""); }}>✕</button>}
+      </form>
+      {msg && <p className={`hint${sheet ? " ok" : " err"}`}>{msg}</p>}
     </div>
   );
 }

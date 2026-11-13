@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DEFAULT_LAYERS } from "../../src/shared/scene";
 import { composeScene, exportScene, fetchScene, fetchWorkspace, partImageUrl, saveScene } from "./api";
 import { loadImage, toCanvas, type LoadedPart } from "./draw";
 import { ParallaxPreview } from "./components/ParallaxPreview";
 import { SceneEditor, type Tool } from "./components/SceneEditor";
+import { rangeFill } from "./ui";
 import {
   DEFAULT_SCROLL,
   EXPORT_PRESETS,
@@ -14,6 +15,7 @@ import {
   type PartMeta,
   type SceneDoc,
   type SceneLayer,
+  type TileCode,
   type WorkspaceSummary,
 } from "./types";
 
@@ -39,27 +41,56 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 48) || "scene";
 }
 
+/** Atlas cell used as the toolbar icon for each tile code (see src/shared/tiles.ts layout). */
+const TILE_ICON: Record<TileCode, { col: number; row: number } | null> = {
+  ".": null,
+  "#": { col: 2, row: 3 },
+  "=": { col: 2, row: 4 },
+  "/": { col: 0, row: 5 },
+  "\\": { col: 1, row: 5 },
+};
+const TILE_SHORT: Record<TileCode, string> = { ".": "Erase", "#": "Ground", "=": "Platform", "/": "Slope ↗", "\\": "Slope ↖" };
+
+function TileIcon({ code, tileset }: { code: TileCode; tileset: string }) {
+  const cell = TILE_ICON[code];
+  if (!cell) return <span className="tile-icon tile-icon-empty" aria-hidden />;
+  return (
+    <span
+      className="tile-icon"
+      aria-hidden
+      style={{ backgroundImage: `url(${partImageUrl(tileset)})`, backgroundPosition: `${-cell.col * 24}px ${-cell.row * 24}px` }}
+    />
+  );
+}
+
+type Toast = { msg: string; kind: "" | "ok" | "err"; id: number };
+
 export function App() {
   const [ws, setWs] = useState<WorkspaceSummary | null>(null);
   const [parts, setParts] = useState<Map<string, LoadedPart>>(new Map());
   const [doc, setDoc] = useState<SceneDoc | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState<"" | "save" | "export" | "new">("");
   const [tool, setTool] = useState<Tool>({ kind: "tile", code: "#" });
   const [propPart, setPropPart] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  const [zoom, setZoom] = useState(2);
+  const [zoom, setZoom] = useState(1);
   const [grid, setGrid] = useState(true);
+  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [preset, setPreset] = useState<ExportPresetId>("godot");
   const [exportDir, setExportDir] = useState(readLs(LS_EXPORT_DIR));
-  const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] = useState<"" | "ok" | "err">("");
-  const [exported, setExported] = useState<string[]>([]);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [exported, setExported] = useState<{ dir: string; paths: string[] } | null>(null);
   const [newName, setNewName] = useState("");
 
-  const say = (msg: string, kind: "" | "ok" | "err" = "") => {
-    setStatus(msg);
-    setStatusKind(kind);
-  };
+  const say = useCallback((msg: string, kind: Toast["kind"] = "") => setToast({ msg, kind, id: Date.now() }), []);
+
+  useEffect(() => {
+    if (!toast || toast.kind === "err") return;
+    const t = setTimeout(() => setToast((cur) => (cur?.id === toast.id ? null : cur)), 5200);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     (async () => {
@@ -79,7 +110,7 @@ export function App() {
         if (first) setDoc(await fetchScene(first.id));
         setPropPart(summary.parts.find((p) => p.kind === "prop")?.id ?? null);
       } catch (e) {
-        say(e instanceof Error ? e.message : "Workspace unavailable", "err");
+        setLoadError(e instanceof Error ? e.message : "Workspace unavailable");
       }
     })();
   }, []);
@@ -119,6 +150,7 @@ export function App() {
 
   const onSave = async () => {
     if (!doc) return;
+    setBusy("save");
     try {
       const res = await saveScene(doc);
       setDoc(res.scene);
@@ -127,11 +159,14 @@ export function App() {
       say(`Saved ${res.path}${res.warnings.length ? ` · ${res.warnings.join("; ")}` : ""}`, "ok");
     } catch (e) {
       say(e instanceof Error ? e.message : "Save failed", "err");
+    } finally {
+      setBusy("");
     }
   };
 
   const onNew = async () => {
     const name = newName.trim() || "New scene";
+    setBusy("new");
     try {
       const res = await composeScene({ id: slugify(name), name, layers: DEFAULT_LAYERS });
       await refreshList();
@@ -142,6 +177,8 @@ export function App() {
       say(`Created ${res.scene.id}`, "ok");
     } catch (e) {
       say(e instanceof Error ? e.message : "Create failed", "err");
+    } finally {
+      setBusy("");
     }
   };
 
@@ -149,27 +186,71 @@ export function App() {
     if (!doc) return;
     try {
       if (dirty) await onSave();
+      setBusy("export");
       writeLs(LS_EXPORT_DIR, exportDir);
       const res = await exportScene({ id: doc.id, preset, dir: exportDir.trim() || undefined });
-      setExported(res.paths);
+      setExported({ dir: res.dir, paths: res.paths });
       say(`Exported ${preset} → ${res.dir}${res.warnings.length ? ` · ${res.warnings.join("; ")}` : ""}`, "ok");
     } catch (e) {
       say(e instanceof Error ? e.message : "Export failed", "err");
+    } finally {
+      setBusy("");
     }
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void onSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   if (!ws || !doc) {
+    const empty = ws && !doc && !loadError;
     return (
-      <div className="app">
-        <h1 className="brand">
-          Easy <span>Scene</span>
-        </h1>
-        <p className={`status ${statusKind}`}>{status || "Loading workspace…"}</p>
+      <div className="splash">
+        <div className="splash-card">
+          <span className="brand-mark" aria-hidden />
+          <h1 className="brand">
+            Easy <span>Scene</span>
+          </h1>
+          {loadError ? (
+            <>
+              <p className="splash-msg err">{loadError}</p>
+              <p className="hint">
+                Is the API running? Start it with <code>npm run serve</code> (or <code>npm run dev</code>) and reload.
+              </p>
+              <button type="button" className="primary" onClick={() => location.reload()}>Retry</button>
+            </>
+          ) : empty ? (
+            <p className="splash-msg">
+              No scenes yet. Run <code>npm run init</code> to seed the demo scenes.
+            </p>
+          ) : (
+            <>
+              <p className="splash-msg">Lighting the lanterns…</p>
+              <div className="loader" aria-label="Loading workspace"><span /><span /><span /></div>
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
   const sel = selected !== null ? doc.props[selected] : undefined;
+  const setProp = (patch: Partial<SceneDoc["props"][number]>) =>
+    update({ ...doc, props: doc.props.map((p, i) => (i === selected ? { ...p, ...patch } : p)) });
+  const nameOf = (id: string) => parts.get(id)?.meta.name ?? id;
+  const toolHint =
+    tool.kind === "tile"
+      ? "Drag to paint · ground autotiles its edges"
+      : tool.kind === "prop"
+        ? "Click to place · snaps to the ground (hold Shift to place at the cursor)"
+        : "Click a prop to select · drag to move";
 
   return (
     <div className="app">
@@ -190,194 +271,258 @@ export function App() {
             </div>
           </div>
         </div>
+
         <div className="toolbar">
-          <label className="inline-field">
-            Scene
-            <select value={doc.id} onChange={(e) => void openScene(e.target.value)}>
-              {ws.scenes.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-              {!ws.scenes.some((s) => s.id === doc.id) && <option value={doc.id}>{doc.name}</option>}
-            </select>
-          </label>
-          <label className="inline-field">
-            New scene
-            <div className="row">
-              <input value={newName} placeholder="Forest evening" onChange={(e) => setNewName(e.target.value)} style={{ width: "9rem" }} />
-              <button type="button" onClick={() => void onNew()}>+ New</button>
+          <div className="tool-group">
+            <label className="field-label" htmlFor="scene-pick">Scene</label>
+            <div className="row nowrap">
+              <select id="scene-pick" value={doc.id} onChange={(e) => void openScene(e.target.value)}>
+                {ws.scenes.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+                {!ws.scenes.some((s) => s.id === doc.id) && <option value={doc.id}>{doc.name}</option>}
+              </select>
+              <button type="button" className={`save-btn${dirty ? " is-dirty" : ""}`} disabled={busy === "save"} title="Save (Ctrl/⌘+S)" onClick={() => void onSave()}>
+                <span className="dot" aria-hidden />
+                {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
+              </button>
             </div>
-          </label>
-          <label className="inline-field">
-            Export
-            <select value={preset} onChange={(e) => setPreset(e.target.value as ExportPresetId)}>
-              {EXPORT_PRESETS.map((p) => (
-                <option key={p.id} value={p.id} title={p.description}>{p.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="inline-field">
-            Export folder
-            <input value={exportDir} placeholder="exports/ (workspace)" onChange={(e) => setExportDir(e.target.value)} style={{ width: "12rem" }} />
-          </label>
-          <button type="button" onClick={() => void onSave()}>{dirty ? "● Save" : "Save"}</button>
-          <button type="button" className="primary" onClick={() => void onExport()}>Export</button>
+          </div>
+          <form className="tool-group" onSubmit={(e) => { e.preventDefault(); void onNew(); }}>
+            <label className="field-label" htmlFor="new-scene">New scene</label>
+            <div className="row nowrap">
+              <input id="new-scene" value={newName} placeholder="Forest evening" onChange={(e) => setNewName(e.target.value)} />
+              <button type="submit" disabled={busy === "new"}>+ New</button>
+            </div>
+          </form>
+          <div className="tool-group export-group">
+            <span className="field-label">Export</span>
+            <div className="row nowrap">
+              <div className="segmented" role="radiogroup" aria-label="Export preset">
+                {EXPORT_PRESETS.map((p) => (
+                  <button type="button" key={p.id} role="radio" aria-checked={preset === p.id} className={preset === p.id ? "active" : ""} title={p.description} onClick={() => setPreset(p.id)}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input aria-label="Export folder" className="export-dir" value={exportDir} placeholder="exports/ (workspace)" onChange={(e) => setExportDir(e.target.value)} />
+              <button type="button" className="primary" disabled={busy === "export"} onClick={() => void onExport()}>
+                {busy === "export" ? "Exporting…" : "Export"}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       <div className="layout">
-        <aside className="panel">
+        <aside className="panel panel-layers">
           <h2>
             <span className="step">1</span>Layers <small>back → front</small>
           </h2>
           <div className="field">
-            <label htmlFor="scene-name">Name</label>
+            <label className="field-label" htmlFor="scene-name">Scene name</label>
             <input id="scene-name" value={doc.name} onChange={(e) => update({ ...doc, name: e.target.value })} />
           </div>
+          {doc.layers.length === 0 && <p className="empty">No parallax layers yet — add a sky to start.</p>}
           {doc.layers.map((layer, i) => {
             const meta = parts.get(layer.part)?.meta as BackgroundPart | undefined;
+            const band = meta?.band ?? "sky";
             return (
-              <div className="layer-card" key={`${i}-${layer.part}`}>
-                <header>
-                  <span className="band">{meta?.band ?? "?"}</span>
-                  <select className="grow" value={layer.part} onChange={(e) => {
-                    const m = backgrounds.find((b) => b.id === e.target.value);
-                    updateLayer(i, { part: e.target.value, scroll: m?.defaultScroll ?? layer.scroll });
-                  }}>
-                    {backgrounds.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="mini" title="Move back" onClick={() => moveLayer(i, -1)}>↑</button>
-                  <button type="button" className="mini" title="Move front" onClick={() => moveLayer(i, 1)}>↓</button>
-                  <button type="button" className="mini" title="Remove" onClick={() => update({ ...doc, layers: doc.layers.filter((_, j) => j !== i) })}>✕</button>
-                </header>
-                <label className="inline-field">
-                  Scroll ×{layer.scroll.toFixed(2)}
-                  <input type="range" min={0} max={1} step={0.01} value={layer.scroll} onChange={(e) => updateLayer(i, { scroll: Number(e.target.value) })} />
+              <div className={`layer-card band-${band}`} key={`${i}-${layer.part}`}>
+                <div className="layer-thumb" aria-hidden>
+                  <img src={partImageUrl(layer.part)} alt="" />
+                </div>
+                <div className="layer-body">
+                  <header>
+                    <span className="band">{meta?.band ?? "?"}</span>
+                    <select className="grow" aria-label={`Layer ${i + 1} part`} value={layer.part} onChange={(e) => {
+                      const m = backgrounds.find((b) => b.id === e.target.value);
+                      updateLayer(i, { part: e.target.value, scroll: m?.defaultScroll ?? layer.scroll });
+                    }}>
+                      {backgrounds.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </header>
+                  <div className="icon-row">
+                    <button type="button" className="icon" title="Move back" aria-label="Move back" disabled={i === 0} onClick={() => moveLayer(i, -1)}>↑</button>
+                    <button type="button" className="icon" title="Move front" aria-label="Move front" disabled={i === doc.layers.length - 1} onClick={() => moveLayer(i, 1)}>↓</button>
+                    <button type="button" className="icon danger" title="Remove layer" aria-label="Remove layer" onClick={() => update({ ...doc, layers: doc.layers.filter((_, j) => j !== i) })}>✕</button>
+                  </div>
+                </div>
+                <label className="slider">
+                  <span>Scroll</span>
+                  <input type="range" min={0} max={1} step={0.01} value={layer.scroll} style={rangeFill(layer.scroll, 0, 1)} onChange={(e) => updateLayer(i, { scroll: Number(e.target.value) })} />
+                  <output>×{layer.scroll.toFixed(2)}</output>
                 </label>
                 <div className="colors">
-                  <input type="checkbox" checked={Boolean(layer.color)} title="Recolor" onChange={(e) => updateLayer(i, { color: e.target.checked ? meta?.recolorBase ?? "#888888" : undefined })} />
-                  <span className="row">
-                    recolor
-                    <input type="color" value={layer.color ?? meta?.recolorBase ?? "#888888"} onChange={(e) => updateLayer(i, { color: e.target.value })} />
-                  </span>
-                  <input type="checkbox" checked={Boolean(layer.tint)} title="Tint" onChange={(e) => updateLayer(i, { tint: e.target.checked ? "#ff9a6a" : undefined })} />
-                  <span className="row">
-                    tint
-                    <input type="color" value={layer.tint ?? "#ff9a6a"} onChange={(e) => updateLayer(i, { tint: e.target.value })} />
-                  </span>
+                  <label className={`chip${layer.color ? " on" : ""}`}>
+                    <input type="checkbox" checked={Boolean(layer.color)} onChange={(e) => updateLayer(i, { color: e.target.checked ? meta?.recolorBase ?? "#888888" : undefined })} />
+                    Recolor
+                    <input type="color" aria-label="Recolor" value={layer.color ?? meta?.recolorBase ?? "#888888"} onChange={(e) => updateLayer(i, { color: e.target.value })} />
+                  </label>
+                  <label className={`chip${layer.tint ? " on" : ""}`}>
+                    <input type="checkbox" checked={Boolean(layer.tint)} onChange={(e) => updateLayer(i, { tint: e.target.checked ? "#ff9a6a" : undefined })} />
+                    Tint
+                    <input type="color" aria-label="Tint" value={layer.tint ?? "#ff9a6a"} onChange={(e) => updateLayer(i, { tint: e.target.value })} />
+                  </label>
                 </div>
                 {layer.tint && (
-                  <label className="inline-field">
-                    Tint amount {(layer.tintAmount ?? 0.35).toFixed(2)}
-                    <input type="range" min={0} max={1} step={0.05} value={layer.tintAmount ?? 0.35} onChange={(e) => updateLayer(i, { tintAmount: Number(e.target.value) })} />
+                  <label className="slider">
+                    <span>Amount</span>
+                    <input type="range" min={0} max={1} step={0.05} value={layer.tintAmount ?? 0.35} style={rangeFill(layer.tintAmount ?? 0.35, 0, 1)} onChange={(e) => updateLayer(i, { tintAmount: Number(e.target.value) })} />
+                    <output>{(layer.tintAmount ?? 0.35).toFixed(2)}</output>
                   </label>
                 )}
               </div>
             );
           })}
-          {doc.layers.length < ws.config.maxLayers && (
-            <button type="button" onClick={() => {
+          {doc.layers.length < ws.config.maxLayers ? (
+            <button type="button" className="add-btn" onClick={() => {
               const b = backgrounds[0];
               if (b) update({ ...doc, layers: [...doc.layers, { part: b.id, scroll: b.defaultScroll ?? DEFAULT_SCROLL[b.band] }] });
-            }}>+ Add layer</button>
+            }}>+ Add layer <small>{doc.layers.length}/{ws.config.maxLayers}</small></button>
+          ) : (
+            <p className="hint">Layer limit reached ({ws.config.maxLayers}).</p>
           )}
-          <div className="field" style={{ marginTop: "0.9rem" }}>
-            <label htmlFor="tileset">Tileset</label>
+          <div className="field section">
+            <label className="field-label" htmlFor="tileset">Tileset</label>
             <select id="tileset" value={doc.tileset} onChange={(e) => update({ ...doc, tileset: e.target.value })}>
               {tilesets.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
-          <p className="hint">{doc.width}×{doc.height} tiles · {doc.width * doc.tileSize}×{doc.height * doc.tileSize}px</p>
+          <dl className="stats">
+            <div><dt>Grid</dt><dd>{doc.width}×{doc.height}</dd></div>
+            <div><dt>Pixels</dt><dd>{doc.width * doc.tileSize}×{doc.height * doc.tileSize}</dd></div>
+            <div><dt>Props</dt><dd>{doc.props.length}</dd></div>
+          </dl>
         </aside>
 
-        <section className="panel">
-          <h2>
-            <span className="step">2</span>Scene <small>{doc.id}</small>
-          </h2>
-          <div className="tool-row">
-            {TILE_CODES.map((c) => (
-              <button type="button" key={c} className={tool.kind === "tile" && tool.code === c ? "active" : ""} title={TILE_CODE_LABELS[c]} onClick={() => setTool({ kind: "tile", code: c })}>
-                <span className="code">{c}</span>{TILE_CODE_LABELS[c]}
-              </button>
-            ))}
-            <button type="button" className={tool.kind === "prop" ? "active" : ""} onClick={() => setTool({ kind: "prop" })}>Place prop</button>
-            <button type="button" className={tool.kind === "select" ? "active" : ""} onClick={() => setTool({ kind: "select" })}>Select / move</button>
-            <label className="row tag">
-              <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} /> grid
-            </label>
-            <label className="row tag">
-              zoom
-              <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>
-                {[1, 2, 3].map((z) => (
-                  <option key={z} value={z}>{z}×</option>
+        <main className="center">
+          <section className="panel">
+            <h2>
+              <span className="step">2</span>Scene <small>{doc.id}</small>
+              {dirty && <span className="badge-dirty">unsaved</span>}
+            </h2>
+            <div className="tool-row">
+              <div className="segmented tools" role="toolbar" aria-label="Paint tools">
+                {TILE_CODES.map((c) => (
+                  <button type="button" key={c} className={tool.kind === "tile" && tool.code === c ? "active" : ""} title={TILE_CODE_LABELS[c]} onClick={() => setTool({ kind: "tile", code: c })}>
+                    <TileIcon code={c} tileset={doc.tileset} />
+                    {TILE_SHORT[c]}
+                  </button>
                 ))}
-              </select>
-            </label>
-          </div>
-          <SceneEditor doc={doc} parts={parts} tool={tool} propPart={propPart} selected={selected} zoom={zoom} showGrid={grid} onChange={update} onSelect={setSelected} />
-          <p className="hint">Paint tiles by dragging · ground autotiles its edges · place props snaps to the ground (hold Shift to place at the cursor).</p>
-          <h2 style={{ marginTop: "1rem" }}>
-            <span className="step step-leaf">3</span>Parallax preview <small>game camera</small>
-          </h2>
-          <ParallaxPreview doc={doc} parts={parts} walkFrames={ws.config.character.walkFrames} />
-          <p className={`status ${statusKind}`}>{status}</p>
-          {exported.length > 0 && (
-            <ul className="export-list">
-              {exported.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-          )}
-        </section>
+              </div>
+              <div className="segmented tools">
+                <button type="button" className={tool.kind === "prop" ? "active" : ""} title="Place the selected prop" onClick={() => setTool({ kind: "prop" })}>
+                  <span className="glyph" aria-hidden>✚</span>Place prop
+                </button>
+                <button type="button" className={tool.kind === "select" ? "active" : ""} title="Select and drag props" onClick={() => setTool({ kind: "select" })}>
+                  <span className="glyph" aria-hidden>⤧</span>Select
+                </button>
+              </div>
+              <div className="view-opts">
+                <label className="switch">
+                  <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} />
+                  <span className="track" aria-hidden />
+                  Grid
+                </label>
+                <div className="segmented small" role="radiogroup" aria-label="Zoom">
+                  {[1, 2, 3].map((z) => (
+                    <button type="button" key={z} role="radio" aria-checked={zoom === z} className={zoom === z ? "active" : ""} onClick={() => setZoom(z)}>{z}×</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <SceneEditor doc={doc} parts={parts} tool={tool} propPart={propPart} selected={selected} zoom={zoom} showGrid={grid}
+              onChange={update} onSelect={setSelected} onHover={setHover} />
+            <div className="statusbar">
+              <span>{toolHint}</span>
+              <span className="mono">{hover ? `tile ${hover.x},${hover.y} · px ${hover.x * doc.tileSize},${hover.y * doc.tileSize}` : `${doc.width}×${doc.height} tiles`}</span>
+            </div>
+          </section>
 
-        <aside className="panel">
+          <section className="panel">
+            <h2>
+              <span className="step step-leaf">3</span>Parallax preview <small>game camera</small>
+            </h2>
+            <ParallaxPreview doc={doc} parts={parts} walkFrames={ws.config.character.walkFrames} />
+            {exported && (
+              <details className="export-list" open>
+                <summary>
+                  Last export · {exported.paths.length} files <span className="mono">{exported.dir}</span>
+                </summary>
+                <ul>
+                  {exported.paths.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </section>
+        </main>
+
+        <aside className="panel panel-props">
           <h2>
-            <span className="step">4</span>Props
+            <span className="step">4</span>Props <small>{props.length} parts</small>
           </h2>
           <div className="prop-grid">
             {props.map((p: PartMeta) => (
               <button type="button" key={p.id} className={`prop-btn${propPart === p.id ? " active" : ""}`} title={p.id}
                 onClick={() => { setPropPart(p.id); setTool({ kind: "prop" }); }}>
-                <img src={partImageUrl(p.id)} alt="" />
-                {p.name}
+                <span className="prop-img"><img src={partImageUrl(p.id)} alt="" /></span>
+                <span className="prop-name">{p.name}</span>
               </button>
             ))}
           </div>
-          <div className="prop-list">
-            {doc.props.map((p, i) => (
-              <div key={i} className={`item${selected === i ? " active" : ""}`} onClick={() => setSelected(i)}>
-                <span className="grow">{p.part} @ {p.x},{p.y}</span>
-              </div>
-            ))}
-          </div>
+          <h3 className="sub-head">Placed <span className="count">{doc.props.length}</span></h3>
+          {doc.props.length === 0 ? (
+            <p className="empty">Nothing placed yet. Pick a prop above, then click on the scene.</p>
+          ) : (
+            <div className="prop-list" role="listbox" aria-label="Placed props">
+              {doc.props.map((p, i) => (
+                <button type="button" role="option" aria-selected={selected === i} key={i} className={`item${selected === i ? " active" : ""}`} onClick={() => { setSelected(i); setTool({ kind: "select" }); }}>
+                  <span className="mini-thumb"><img src={partImageUrl(p.part)} alt="" /></span>
+                  <span className="grow">{nameOf(p.part)}</span>
+                  <span className="mono coords">{p.x},{p.y}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {sel && selected !== null && (
-            <div className="layer-card" style={{ marginTop: "0.6rem" }}>
+            <div className="inspector">
               <header>
                 <span className="band">prop</span>
-                <span className="grow">{sel.part}</span>
+                <span className="grow">{nameOf(sel.part)}</span>
+                <span className="mono coords">#{selected + 1}</span>
               </header>
-              <div className="row">
-                <button type="button" className="mini" onClick={() => update({ ...doc, props: doc.props.map((p, i) => (i === selected ? { ...p, flipX: !p.flipX } : p)) })}>⇋ Flip</button>
-                <select value={sel.layer ?? "auto"} onChange={(e) => update({
-                  ...doc,
-                  props: doc.props.map((p, i) => (i === selected ? { ...p, layer: e.target.value === "auto" ? undefined : (e.target.value as "back" | "front") } : p)),
-                })}>
-                  <option value="auto">default layer</option>
-                  <option value="back">behind tiles</option>
-                  <option value="front">in front</option>
+              <div className="inspector-grid">
+                <button type="button" className={sel.flipX ? "active" : ""} onClick={() => setProp({ flipX: !sel.flipX })}>⇋ Flip</button>
+                <select aria-label="Draw layer" value={sel.layer ?? "auto"} onChange={(e) => setProp({ layer: e.target.value === "auto" ? undefined : (e.target.value as "back" | "front") })}>
+                  <option value="auto">Default layer</option>
+                  <option value="back">Behind tiles</option>
+                  <option value="front">In front</option>
                 </select>
-                <input type="color" title="Recolor" value={sel.color ?? parts.get(sel.part)?.meta.recolorBase ?? "#888888"}
-                  onChange={(e) => update({ ...doc, props: doc.props.map((p, i) => (i === selected ? { ...p, color: e.target.value } : p)) })} />
-                <button type="button" className="mini" onClick={() => { update({ ...doc, props: doc.props.filter((_, i) => i !== selected) }); setSelected(null); }}>Delete</button>
+                <label className={`chip${sel.color ? " on" : ""}`}>
+                  Recolor
+                  <input type="color" aria-label="Recolor prop" value={sel.color ?? parts.get(sel.part)?.meta.recolorBase ?? "#888888"} onChange={(e) => setProp({ color: e.target.value })} />
+                </label>
+                <button type="button" className="danger" onClick={() => { update({ ...doc, props: doc.props.filter((_, i) => i !== selected) }); setSelected(null); }}>Delete</button>
               </div>
             </div>
           )}
-          <p className="hint">Sample parts are generated by code (CC0). Drop your own art in parts/.</p>
+          <p className="hint foot">Sample parts are generated by code (CC0). Drop your own art in <code>parts/</code>.</p>
         </aside>
       </div>
+
+      {toast && (
+        <div className={`toast ${toast.kind}`} role="status">
+          <span className="toast-msg">{toast.msg}</span>
+          <button type="button" className="icon" aria-label="Dismiss" onClick={() => setToast(null)}>✕</button>
+        </div>
+      )}
     </div>
   );
 }

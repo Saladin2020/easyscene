@@ -1,17 +1,34 @@
+<!-- easy-suite:header:start -->
 <p align="center">
-  <img src="docs/assets/icon-512.png" width="120" alt="Easy Scene icon" />
+  <a href="#easy-suite"><img src="docs/brand/banner-scene.png" width="100%" alt="Easy Scene: Side-view parallax scenes, autotiles & props" /></a>
 </p>
+
+<p align="center">
+  <b>Easy Scene</b> · ฉากเกมด้านข้าง พารัลแลกซ์ · Side-view parallax scenes, autotiles & props<br />
+  <sub>Part of <a href="#easy-suite"><b>Easy Suite</b></a>: Thai-friendly pixel-art game dev tools for Godot 4.3+ and PixiJS v8</sub>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Saladin2020/easyscene/actions/workflows/ci.yml"><img src="https://github.com/Saladin2020/easyscene/actions/workflows/ci.yml/badge.svg" alt="CI" /></a> <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2e2014?style=flat-square" alt="MIT license" /></a> <img src="https://img.shields.io/badge/Godot-4.3%2B-478cbf?style=flat-square&logo=godotengine&logoColor=white" alt="Godot 4.3+" /> <a href="#export"><img src="https://img.shields.io/badge/PixiJS-v8-e72264?style=flat-square" alt="PixiJS v8" /></a> <a href="docs/MCP.md"><img src="https://img.shields.io/badge/MCP-server-c45c26?style=flat-square" alt="MCP server" /></a> <img src="https://img.shields.io/badge/Thai-ready-f4ae3d?style=flat-square" alt="Thai-ready" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/Saladin2020/easysprite"><img src="docs/brand/logo-sprite-96.png" width="32" alt="Easy Sprite" title="Easy Sprite" /></a>
+  <a href="https://github.com/Saladin2020/easyscene"><img src="docs/brand/logo-scene-96.png" width="40" alt="Easy Scene" title="Easy Scene (this repo)" /></a>
+  <a href="https://github.com/Saladin2020/easydialogue"><img src="docs/brand/logo-dialogue-96.png" width="32" alt="Easy Dialogue" title="Easy Dialogue" /></a>
+  <a href="https://github.com/Saladin2020/easytilemap"><img src="docs/brand/logo-tilemap-96.png" width="32" alt="Easy Tilemap" title="Easy Tilemap" /></a>
+  <a href="https://github.com/Saladin2020/easyquest"><img src="docs/brand/logo-quest-96.png" width="32" alt="Easy Quest" title="Easy Quest" /></a>
+  <a href="https://github.com/Saladin2020/easysfx"><img src="docs/brand/logo-sfx-96.png" width="32" alt="Easy SFX" title="Easy SFX" /></a>
+  <a href="https://github.com/Saladin2020/easyui"><img src="docs/brand/logo-ui-96.png" width="32" alt="Easy UI" title="Easy UI" /></a>
+</p>
+<!-- easy-suite:header:end -->
 
 # Easy Scene
 
 **ฉากเกมด้านข้าง · หมู่บ้านอบอุ่น**  
 Compose **side-view** 2D game scenes from modular parts — parallax backgrounds, **16px** autotiles, props — and export them to **Godot 4**, **PixiJS** or plain PNG. The sibling of [Easy Sprite](https://github.com/Saladin2020/easysprite): its 48px side-view characters walk straight into these scenes.
 
-[![CI](https://github.com/Saladin2020/easyscene/actions/workflows/ci.yml/badge.svg)](https://github.com/Saladin2020/easyscene/actions/workflows/ci.yml)
-[![license](https://img.shields.io/badge/license-MIT-2e2014?style=flat-square)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-3f7d52?style=flat-square)](https://nodejs.org)
-[![godot](https://img.shields.io/badge/export-Godot%204.3%2B%20%7C%20PixiJS%20%7C%20PNG-f4ae3d?style=flat-square)](#export)
-[![mcp](https://img.shields.io/badge/MCP-compose%20only-c45c26?style=flat-square)](docs/MCP.md)
 
 > You prep the art. Easy Scene only **selects · arranges · recolors · previews · exports**.  
 > No AI art generation in-app.
@@ -184,6 +201,32 @@ npm run catalog          # Thai town street + labeled prop catalog (-- <outDir> 
 Same rules as Easy Sprite: no CORS; loopback `Host` only on `127.0.0.1`; a token for any other host (`EASYSCENE_TOKEN`); scenes, exports and character sheets only inside the workspace or `EASYSCENE_ALLOWED_DIRS`; scene ids limited to `a-z 0-9 _ -`.
 
 ---
+
+<!-- easy-suite:table:start -->
+## Easy Suite
+
+<img src="docs/brand/logo-suite-96.png" width="48" align="right" alt="Easy Suite" />
+
+Seven small, local-first tools that share one look (teak, lantern gold, Kanit, 16/48px pixels), one
+workflow (CLI · web editor · MCP server) and the same targets (**Godot 4.3+** and **PixiJS v8**).
+ชุดเครื่องมือทำเกมพิกเซลสไตล์ไทย ใช้ร่วมกันได้ทั้งชุด
+
+| | Tool | What it does | Repo |
+|:-:|---|---|---|
+| <img src="docs/brand/logo-sprite-96.png" width="40" alt="" /> | [**Easy Sprite**](https://github.com/Saladin2020/easysprite) | Compose modular 48px chibi characters (top-down + side-view) and export sheets. | [`easysprite`](https://github.com/Saladin2020/easysprite) |
+| <img src="docs/brand/logo-scene-96.png" width="40" alt="" /> | **Easy Scene** ← you are here | Side-view levels: parallax layers, 16px autotiles, Thai town props. | [`easyscene`](https://github.com/Saladin2020/easyscene) |
+| <img src="docs/brand/logo-dialogue-96.png" width="40" alt="" /> | [**Easy Dialogue**](https://github.com/Saladin2020/easydialogue) | Branching `.ezd` dialogue with Thai-safe text, portraits and choices. | [`easydialogue`](https://github.com/Saladin2020/easydialogue) |
+| <img src="docs/brand/logo-tilemap-96.png" width="40" alt="" /> | [**Easy Tilemap**](https://github.com/Saladin2020/easytilemap) | Top-down 16px maps: blob-47 autotiles, objects, collision, spawns. | [`easytilemap`](https://github.com/Saladin2020/easytilemap) |
+| <img src="docs/brand/logo-quest-96.png" width="40" alt="" /> | [**Easy Quest**](https://github.com/Saladin2020/easyquest) | Text `.ezq` quests: steps, flags, items, rewards, linked to dialogue. | [`easyquest`](https://github.com/Saladin2020/easyquest) |
+| <img src="docs/brand/logo-sfx-96.png" width="40" alt="" /> | [**Easy SFX**](https://github.com/Saladin2020/easysfx) | Deterministic 8-bit SFX and 4-channel chiptune loops, typing blips. | [`easysfx`](https://github.com/Saladin2020/easysfx) |
+| <img src="docs/brand/logo-ui-96.png" width="40" alt="" /> | [**Easy UI**](https://github.com/Saladin2020/easyui) | Nine-slice pixel UI kit: panels, bars, inventory, menus, 24 icons. | [`easyui`](https://github.com/Saladin2020/easyui) |
+
+### Works with
+
+- **Easy Sprite** side-view sheets walk straight in; the ground row is read from the sheet.
+- **Easy Dialogue** renders its boxes over Easy Scene village backgrounds.
+- **Easy SFX** and **Easy UI** add the sound bank and HUD on top of the exported Godot / PixiJS scene.
+<!-- easy-suite:table:end -->
 
 ## License / credit
 

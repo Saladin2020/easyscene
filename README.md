@@ -122,7 +122,7 @@ Everything is nearest-neighbour. Scene JSON: [`docs/SCENE_FORMAT.md`](docs/SCENE
 
 ### Easy Sprite characters
 
-Put a whole cast of Easy Sprite **side-view** native sheets (1440×144 · rows `right left front` · 48px frames) into a scene. Each one has its own `x`, `facing`, `anim` (`idle` / `walk`), still `frame`, draw `layer` and optional `patrol`. Their feet snap onto the ground. The sole row is detected from the sheet: row 47 for Easy Sprite side sheets. If a sibling `<sheet>.json` export sits next to the PNG, Easy Scene reads the frame order and rows from it.
+Put a whole cast of Easy Sprite **side-view** native sheets (1440×144 · rows `right left front` · 48px frames) into a scene. Each one has its own `x`, `facing`, `anim` (`idle` / `walk`), still `frame`, draw `layer` and optional `patrol`. Their feet snap onto the ground. The sole row is detected from the sheet: row 47 for Easy Sprite side sheets. If a sibling `<sheet>.json` export sits next to the PNG, Easy Scene reads the frame order and rows from it. In the web editor you can add, select, drag (x, feet on the terrain; Shift for a free baseline) and remove characters, and edit facing, anim, groundRow and patrol — it all round-trips through `characters[]`.
 
 <p align="center">
   <img src="docs/assets/thai-village-cast.png" width="720" alt="Six Easy Sprite characters in the Thai village street: farmer, vendor, monk in a saffron robe, student, kid, elder" />
@@ -143,7 +143,7 @@ npx tsx src/cli.ts render --id thai_village_cast --mode viewport --camera 160 --
 | --- | --- |
 | `png` | drawn into `*_preview.png` / `*_parallax.png` at their still frame |
 | `pixi` | `characters/*.png` + `json.characters` (rows, `idle`/`walk` columns, fps, patrol). `load-scene.js` builds a `PIXI.AnimatedSprite` per character. Call `scene.update(dt)` each tick to move patrols. |
-| `godot` | `assets/characters/*.png`, a `SpriteFrames` per sheet (`idle_<dir>`, `walk_<dir>`), an autoplaying `AnimatedSprite2D` per character under `Characters` / `CharactersBack` / `CharactersFront`, plus `character_patrol.gd` for patrols |
+| `godot` | `assets/characters/*.png`, a `SpriteFrames` per sheet (`idle_<dir>`, `walk_<dir>`), an autoplaying `AnimatedSprite2D` per character under `Characters` / `CharactersBack` / `CharactersFront`, plus `character_patrol.gd` for patrols (Y follows hills and slopes, same rule as the PNG / Pixi exports) |
 
 The old single `"character": { sheet, x }` field and a single `--character sheet.png` still work. The editor's parallax preview animates the placed cast and also has its own **Walker** sheet that follows the camera. Paths must be inside the workspace or `EASYSCENE_ALLOWED_DIRS`; the CLI may read any path you give it.
 

@@ -203,14 +203,22 @@ export function godotAnimName(anim: string, dir: string): string {
 const PATROL_GD = `extends AnimatedSprite2D
 ## Easy Scene character patrol: walks between min_x and max_x, turning at each end.
 ## Uses walk_left / walk_right (or flips walk_right when the sheet has no left row).
+## When follow_terrain is on, Y tracks the ground / 45° slopes the same way the PNG and Pixi exports do
+## (first solid or slope tile from the top; slope mid-point).
 
 @export var min_x := 0.0
 @export var max_x := 0.0
 @export var speed := 24.0
+@export var tile_size := 16
+@export var frame_size := 48
+@export var ground_row := 47
+@export var follow_terrain := true
+@export var tile_codes: PackedStringArray = PackedStringArray()
 var _dir := 1.0
 
 func _ready() -> void:
 	_dir = -1.0 if (String(animation).ends_with("_left") or flip_h) else 1.0
+	_snap_y()
 
 func _face(dir: float) -> void:
 	_dir = dir
@@ -220,6 +228,26 @@ func _face(dir: float) -> void:
 	else:
 		flip_h = dir < 0.0
 		play("walk_right")
+
+## World Y of the ground under a world X, matching Easy Scene surfaceY / Pixi surfaceAt.
+func _surface_y(px: float) -> float:
+	if tile_codes.is_empty():
+		return position.y + float(ground_row + 1)
+	var col := int(floor((px + float(frame_size) * 0.5) / float(tile_size)))
+	col = clampi(col, 0, tile_codes[0].length() - 1)
+	for y in range(tile_codes.size()):
+		if col >= tile_codes[y].length():
+			continue
+		var c := tile_codes[y][col]
+		if c == "#":
+			return float(y * tile_size)
+		if c == "/" or c == "\\":
+			return float(y * tile_size) + float(tile_size) * 0.5
+	return float(tile_codes.size() * tile_size)
+
+func _snap_y() -> void:
+	if follow_terrain and not tile_codes.is_empty():
+		position.y = _surface_y(position.x) - float(ground_row + 1)
 
 func _process(delta: float) -> void:
 	if max_x <= min_x or speed <= 0.0:
@@ -231,7 +259,14 @@ func _process(delta: float) -> void:
 	elif position.x <= min_x:
 		position.x = min_x
 		_face(1.0)
+	_snap_y()
 `;
+
+/** Godot 4 PackedStringArray literal, escaping backslashes in slope tile codes. */
+export function godotPackedStringArray(rows: readonly string[]): string {
+  const inner = rows.map((r) => `"${r.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(", ");
+  return `PackedStringArray(${inner})`;
+}
 
 const CAMERA_PAN_GD = `extends Camera2D
 ## Easy Scene preview camera: arrow keys pan across the level so you can check the parallax.
@@ -327,6 +362,9 @@ export function buildGodotTscn(
         ];
         if (ch.spec.patrol && patrolId) {
           lines.push(`min_x = ${num(ch.spec.patrol.minX)}`, `max_x = ${num(ch.spec.patrol.maxX)}`, `speed = ${num(ch.spec.patrol.speed ?? 24)}`);
+          lines.push(`tile_size = ${doc.tileSize}`, `frame_size = ${ch.layout.frameSize}`, `ground_row = ${ch.groundRow}`);
+          lines.push(`follow_terrain = ${ch.spec.y === undefined ? "true" : "false"}`);
+          lines.push(`tile_codes = ${godotPackedStringArray(doc.tiles)}`);
         }
         return lines.join("\n");
       });

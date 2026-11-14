@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DEFAULT_LAYERS } from "../../src/shared/scene";
-import { composeScene, exportScene, fetchScene, fetchWorkspace, partImageUrl, saveScene } from "./api";
-import { loadImage, toCanvas, type LoadedPart } from "./draw";
+import { characterUrl, composeScene, exportScene, fetchScene, fetchWorkspace, partImageUrl, saveScene } from "./api";
+import { detectSheetGroundRow, loadImage, toCanvas, type LoadedPart } from "./draw";
 import { ParallaxPreview } from "./components/ParallaxPreview";
-import { SceneEditor, type Tool } from "./components/SceneEditor";
+import { SceneEditor, type LoadedSheet, type Tool } from "./components/SceneEditor";
+import { characterList, patchCharacter, removeCharacter, withCharacters, type EditorSelection } from "../../src/shared/editorCharacters";
 import { rangeFill } from "./ui";
 import {
   DEFAULT_SCROLL,
@@ -19,6 +20,11 @@ import {
   type SceneLayer,
   type TileCode,
   type WorkspaceSummary,
+  type CharacterAnim,
+  type CharacterFacing,
+  type CharacterLayer,
+  CHARACTER_ANIMS,
+  CHARACTER_FACINGS,
   propCategory,
 } from "./types";
 
@@ -76,7 +82,10 @@ export function App() {
   const [busy, setBusy] = useState<"" | "save" | "export" | "new">("");
   const [tool, setTool] = useState<Tool>({ kind: "tile", code: "#" });
   const [propPart, setPropPart] = useState<string | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<EditorSelection | null>(null);
+  const [charSheet, setCharSheet] = useState<string | null>(null);
+  const [charPath, setCharPath] = useState("");
+  const [sheets, setSheets] = useState<Map<string, LoadedSheet>>(new Map());
   const [zoom, setZoom] = useState(1);
   const [grid, setGrid] = useState(true);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
@@ -132,6 +141,34 @@ export function App() {
     setDoc(next);
     setDirty(true);
   };
+
+  const charKey = doc ? characterList(doc).map((c) => c.sheet).concat(charSheet ?? "").join("|") : "";
+  useEffect(() => {
+    if (!doc) return;
+    const paths = [...new Set([...characterList(doc).map((c) => c.sheet), charSheet].filter((p): p is string => Boolean(p)))];
+    let alive = true;
+    void Promise.all(
+      paths.map(async (p) => {
+        const img = new Image();
+        img.src = characterUrl(p);
+        try {
+          await img.decode();
+        } catch {
+          return null;
+        }
+        return { path: p, img, groundRow: detectSheetGroundRow(img) ?? 47 } satisfies LoadedSheet;
+      }),
+    ).then((list) => {
+      if (!alive) return;
+      const next = new Map<string, LoadedSheet>();
+      for (const s of list) if (s) next.set(s.path, s);
+      setSheets(next);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.id, charKey]);
 
   const updateLayer = (i: number, patch: Partial<SceneLayer>) => {
     if (!doc) return;
@@ -213,6 +250,18 @@ export function App() {
         e.preventDefault();
         void onSave();
       }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (!doc || !selected) return;
+        e.preventDefault();
+        if (selected.kind === "prop") {
+          update({ ...doc, props: doc.props.filter((_, i) => i !== selected.index) });
+        } else {
+          update(withCharacters(doc, removeCharacter(characterList(doc), selected.index)));
+        }
+        setSelected(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -250,16 +299,27 @@ export function App() {
     );
   }
 
-  const sel = selected !== null ? doc.props[selected] : undefined;
-  const setProp = (patch: Partial<SceneDoc["props"][number]>) =>
-    update({ ...doc, props: doc.props.map((p, i) => (i === selected ? { ...p, ...patch } : p)) });
+  const chars = characterList(doc);
+  const sel = selected?.kind === "prop" ? doc.props[selected.index] : undefined;
+  const selChar = selected?.kind === "character" ? chars[selected.index] : undefined;
+  const setProp = (patch: Partial<SceneDoc["props"][number]>) => {
+    if (selected?.kind !== "prop") return;
+    update({ ...doc, props: doc.props.map((p, i) => (i === selected.index ? { ...p, ...patch } : p)) });
+  };
+  const setChar = (patch: Partial<NonNullable<typeof selChar>>) => {
+    if (selected?.kind !== "character") return;
+    update(withCharacters(doc, patchCharacter(chars, selected.index, patch)));
+  };
   const nameOf = (id: string) => parts.get(id)?.meta.name ?? id;
+  const charLabel = (c: (typeof chars)[number], i: number) => c.name || c.sheet.split(/[\\/]/).pop() || `character ${i + 1}`;
   const toolHint =
     tool.kind === "tile"
       ? "Drag to paint · ground autotiles its edges"
       : tool.kind === "prop"
         ? "Click to place · snaps to the ground (hold Shift to place at the cursor)"
-        : "Click a prop to select · drag to move";
+        : tool.kind === "character"
+          ? "Click to place a character · drag to move (Shift = free baseline)"
+          : "Click a prop or character to select · drag to move (Shift = free)";
 
   return (
     <div className="app">
@@ -406,6 +466,7 @@ export function App() {
             <div><dt>Grid</dt><dd>{doc.width}×{doc.height}</dd></div>
             <div><dt>Pixels</dt><dd>{doc.width * doc.tileSize}×{doc.height * doc.tileSize}</dd></div>
             <div><dt>Props</dt><dd>{doc.props.length}</dd></div>
+            <div><dt>Characters</dt><dd>{chars.length}</dd></div>
           </dl>
         </aside>
 
@@ -428,8 +489,11 @@ export function App() {
                 <button type="button" className={tool.kind === "prop" ? "active" : ""} title="Place the selected prop" onClick={() => setTool({ kind: "prop" })}>
                   <span className="glyph" aria-hidden>✚</span>Place prop
                 </button>
-                <button type="button" className={tool.kind === "select" ? "active" : ""} title="Select and drag props" onClick={() => setTool({ kind: "select" })}>
+                <button type="button" className={tool.kind === "select" ? "active" : ""} title="Select and drag props and characters" onClick={() => setTool({ kind: "select" })}>
                   <span className="glyph" aria-hidden>⤧</span>Select
+                </button>
+                <button type="button" className={tool.kind === "character" ? "active" : ""} title="Place an Easy Sprite character" onClick={() => setTool({ kind: "character" })}>
+                  <span className="glyph" aria-hidden>☺</span>Character
                 </button>
               </div>
               <div className="view-opts">
@@ -445,7 +509,7 @@ export function App() {
                 </div>
               </div>
             </div>
-            <SceneEditor doc={doc} parts={parts} tool={tool} propPart={propPart} selected={selected} zoom={zoom} showGrid={grid}
+            <SceneEditor doc={doc} parts={parts} sheets={sheets} tool={tool} propPart={propPart} charSheet={charSheet} selected={selected} zoom={zoom} showGrid={grid}
               onChange={update} onSelect={setSelected} onHover={setHover} />
             <div className="statusbar">
               <span>{toolHint}</span>
@@ -503,7 +567,7 @@ export function App() {
           ) : (
             <div className="prop-list" role="listbox" aria-label="Placed props">
               {doc.props.map((p, i) => (
-                <button type="button" role="option" aria-selected={selected === i} key={i} className={`item${selected === i ? " active" : ""}`} onClick={() => { setSelected(i); setTool({ kind: "select" }); }}>
+                <button type="button" role="option" aria-selected={selected?.kind === "prop" && selected.index === i} key={i} className={`item${selected?.kind === "prop" && selected.index === i ? " active" : ""}`} onClick={() => { setSelected({ kind: "prop", index: i }); setTool({ kind: "select" }); }}>
                   <span className="mini-thumb"><img src={partImageUrl(p.part)} alt="" /></span>
                   <span className="grow">{nameOf(p.part)}</span>
                   <span className="mono coords">{p.x},{p.y}</span>
@@ -511,12 +575,12 @@ export function App() {
               ))}
             </div>
           )}
-          {sel && selected !== null && (
+          {sel && selected?.kind === "prop" && (
             <div className="inspector">
               <header>
                 <span className="band">prop</span>
                 <span className="grow">{nameOf(sel.part)}</span>
-                <span className="mono coords">#{selected + 1}</span>
+                <span className="mono coords">#{selected.index + 1}</span>
               </header>
               <div className="inspector-grid">
                 <button type="button" className={sel.flipX ? "active" : ""} onClick={() => setProp({ flipX: !sel.flipX })}>⇋ Flip</button>
@@ -529,11 +593,93 @@ export function App() {
                   Recolor
                   <input type="color" aria-label="Recolor prop" value={sel.color ?? parts.get(sel.part)?.meta.recolorBase ?? "#888888"} onChange={(e) => setProp({ color: e.target.value })} />
                 </label>
-                <button type="button" className="danger" onClick={() => { update({ ...doc, props: doc.props.filter((_, i) => i !== selected) }); setSelected(null); }}>Delete</button>
+                <button type="button" className="danger" onClick={() => { update({ ...doc, props: doc.props.filter((_, i) => i !== selected.index) }); setSelected(null); }}>Delete</button>
               </div>
             </div>
           )}
-          <p className="hint foot">Sample parts are generated by code (CC0). Drop your own art in <code>parts/</code>.</p>
+          <h3 className="sub-head">Characters <span className="count">{chars.length}</span></h3>
+          <form className="row nowrap char-row" onSubmit={(e) => {
+            e.preventDefault();
+            const path = charPath.trim();
+            if (!path) return;
+            setCharSheet(path);
+            setTool({ kind: "character" });
+          }}>
+            <input className="grow" aria-label="Character sheet path" placeholder="Easy Sprite side-view sheet (.png)" value={charPath}
+              onChange={(e) => setCharPath(e.target.value)} />
+            <button type="submit" disabled={!charPath.trim()}>Use sheet</button>
+          </form>
+          {charSheet && <p className="hint ok">Click the scene to place <code>{charSheet.split(/[\\/]/).pop()}</code> · feet snap to the ground</p>}
+          {chars.length === 0 ? (
+            <p className="empty">No characters yet. Paste a sheet path, click Use sheet, then click on the scene.</p>
+          ) : (
+            <div className="prop-list" role="listbox" aria-label="Placed characters">
+              {chars.map((c, i) => (
+                <button type="button" role="option" aria-selected={selected?.kind === "character" && selected.index === i} key={`${c.sheet}-${i}`}
+                  className={`item${selected?.kind === "character" && selected.index === i ? " active" : ""}`}
+                  onClick={() => { setSelected({ kind: "character", index: i }); setTool({ kind: "select" }); }}>
+                  <span className="grow">{charLabel(c, i)}</span>
+                  <span className="mono coords">{c.x ?? 96},{c.groundRow ?? sheets.get(c.sheet)?.groundRow ?? 47}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {selChar && selected?.kind === "character" && (
+            <div className="inspector">
+              <header>
+                <span className="band">character</span>
+                <span className="grow">{charLabel(selChar, selected.index)}</span>
+                <span className="mono coords">#{selected.index + 1}</span>
+              </header>
+              <div className="field">
+                <label className="field-label" htmlFor="char-name">Name</label>
+                <input id="char-name" value={selChar.name ?? ""} onChange={(e) => setChar({ name: e.target.value || undefined })} />
+              </div>
+              <div className="inspector-grid">
+                <label className="field">
+                  <span className="field-label">x</span>
+                  <input type="number" value={selChar.x ?? 96} onChange={(e) => setChar({ x: Number(e.target.value) })} />
+                </label>
+                <label className="field">
+                  <span className="field-label">groundRow</span>
+                  <input type="number" min={0} max={47} value={selChar.groundRow ?? sheets.get(selChar.sheet)?.groundRow ?? 47}
+                    onChange={(e) => setChar({ groundRow: Number(e.target.value) })} />
+                </label>
+                <select aria-label="Facing" value={selChar.facing ?? "right"} onChange={(e) => setChar({ facing: e.target.value as CharacterFacing })}>
+                  {CHARACTER_FACINGS.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+                <select aria-label="Animation" value={selChar.anim ?? "idle"} onChange={(e) => setChar({ anim: e.target.value as CharacterAnim })}>
+                  {CHARACTER_ANIMS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <select aria-label="Draw layer" value={selChar.layer ?? "main"} onChange={(e) => setChar({ layer: e.target.value as CharacterLayer })}>
+                  <option value="back">Behind tiles</option>
+                  <option value="main">Main</option>
+                  <option value="front">In front</option>
+                </select>
+                <button type="button" className={selChar.patrol ? "active" : ""} onClick={() => setChar({
+                  patrol: selChar.patrol ? undefined : { minX: (selChar.x ?? 96) - 64, maxX: (selChar.x ?? 96) + 64, speed: 24 },
+                })}>{selChar.patrol ? "Patrol on" : "Patrol"}</button>
+                <button type="button" className="danger" onClick={() => { update(withCharacters(doc, removeCharacter(chars, selected.index))); setSelected(null); }}>Delete</button>
+              </div>
+              {selChar.patrol && (
+                <div className="inspector-grid">
+                  <label className="field">
+                    <span className="field-label">minX</span>
+                    <input type="number" value={selChar.patrol.minX} onChange={(e) => setChar({ patrol: { ...selChar.patrol!, minX: Number(e.target.value) } })} />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">maxX</span>
+                    <input type="number" value={selChar.patrol.maxX} onChange={(e) => setChar({ patrol: { ...selChar.patrol!, maxX: Number(e.target.value) } })} />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">speed</span>
+                    <input type="number" min={0} value={selChar.patrol.speed ?? 24} onChange={(e) => setChar({ patrol: { ...selChar.patrol!, speed: Number(e.target.value) } })} />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          <p className="hint foot">Sample parts are generated by code (CC0). Drop your own art in <code>parts/</code>. Character sheets must be inside the workspace.</p>
         </aside>
       </div>
 

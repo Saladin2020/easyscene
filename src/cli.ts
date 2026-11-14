@@ -12,12 +12,35 @@ import { renderParallaxStrip, renderScene } from "./shared/render.js";
 import type { ComposeLayerInput, ComposePropInput, ComposeSceneInput } from "./shared/scene.js";
 import type { TerrainSpec } from "./shared/tiles.js";
 import { propCategory, type ExportPresetId } from "./shared/types.js";
-import { characterSprite, composeAndSave, loadAssets, loadCharacterSheet } from "./lib/compose.js";
+import { composeAndSave, loadAssets, resolveCharacters } from "./lib/compose.js";
+import { parseCharacterArg, sceneCharacters } from "./shared/characters.js";
+import type { SceneCharacter } from "./shared/types.js";
 import { exportScene, type ExportResult } from "./lib/export.js";
 import { writePng } from "./lib/png.js";
 import { getWorkspaceSummary, initWorkspace, loadParts, loadScene, loadScenes, resolveWorkspace, summarizeScene } from "./lib/workspace.js";
 
 const program = new Command();
+
+/** Repeatable `--character path[:x[:facing[:anim[:frame]]]]` → characters with absolute sheet paths. */
+function characterArgs(values: string[] | string | undefined): SceneCharacter[] | undefined {
+  const list = values === undefined ? [] : Array.isArray(values) ? values : [values];
+  if (!list.length) return undefined;
+  return list.map((v) => {
+    const c = parseCharacterArg(v);
+    return { ...c, sheet: path.resolve(c.sheet) };
+  });
+}
+
+function upscale(img: { width: number; height: number; data: Uint8Array | Uint8ClampedArray }, n: number) {
+  const out = { width: img.width * n, height: img.height * n, data: new Uint8Array(img.width * n * img.height * n * 4) };
+  for (let y = 0; y < out.height; y++) {
+    for (let x = 0; x < out.width; x++) {
+      const si = ((Math.floor(y / n) * img.width) + Math.floor(x / n)) * 4;
+      out.data.set(img.data.subarray(si, si + 4), (y * out.width + x) * 4);
+    }
+  }
+  return out;
+}
 const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function pathExists(p: string): Promise<boolean> {
@@ -165,7 +188,7 @@ program
   .option("--street <x:part,part,...>", "Chain props edge to edge from px x (repeatable), e.g. 0:prop_bld_noodle_shop,prop_bld_mini_mart", collect)
   .option("--tiles-file <file>", "Text file of tile rows (. # = / \\)")
   .option("--input <file>", "Full compose JSON (ComposeSceneInput); flags override")
-  .option("--character <png>", "Easy Sprite side-view sheet for previews")
+  .option("--character <spec>", "Easy Sprite sheet placed in the scene: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
   .option("--scenes-dir <dir>", "Where to write the scene JSON (default scenes/)")
   .option("--export <presets>", "Also export: png,godot,pixi or all")
   .option("--out <dir>", "Export parent folder (default exports/)")
@@ -211,7 +234,8 @@ program
       const [xRaw, list = ""] = st.includes(":") ? st.split(/:(.*)/s) : ["0", st];
       input.streets = [...(input.streets ?? []), { x: Number(xRaw) || 0, items: list.split(",").map((s) => s.trim()).filter(Boolean) }];
     }
-    if (opts.character) input.character = { sheet: path.resolve(opts.character) };
+    const cliChars = characterArgs(opts.character);
+    if (cliChars) input.characters = [...(input.characters ?? []), ...cliChars];
 
     const res = await composeAndSave(root, input, opts.scenesDir);
     const exports: ExportResult[] = [];
@@ -223,7 +247,6 @@ program
             scene: res.scene,
             preset,
             dir: opts.out,
-            character: opts.character,
             trustedCharacter: true,
             godot: { parallax: opts.godotParallax },
           }),
@@ -232,7 +255,7 @@ program
     }
     print(opts.json, { ...res, exports }, () => {
       console.log(`Scene ${res.scene.id} → ${res.path}`);
-      console.log(`  ${res.scene.width}x${res.scene.height} tiles · ${res.scene.layers.length} layers · ${res.scene.props.length} props · tileset ${res.scene.tileset}`);
+      console.log(`  ${res.scene.width}x${res.scene.height} tiles · ${res.scene.layers.length} layers · ${res.scene.props.length} props · ${sceneCharacters(res.scene).length} characters · tileset ${res.scene.tileset}`);
       for (const w of res.warnings) console.log(`  warn: ${w}`);
       for (const e of exports) {
         console.log(`  export ${e.preset} → ${e.dir} (${e.paths.length} files)`);
@@ -248,7 +271,7 @@ program
   .option("--preset <presets>", "png | godot | pixi | all (comma list ok)", "png")
   .option("--out <dir>", "Parent folder (default exports/)")
   .option("--base-name <name>", "Folder/file stem (default scene id)")
-  .option("--character <png>", "Easy Sprite side-view sheet drawn into previews")
+  .option("--character <spec>", "Replace the scene's characters: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
   .option("--godot-parallax <mode>", "parallax2d (default) | legacy")
   .option("--scenes-dir <dir>", "Scene folder (default scenes/)")
   .option("--workspace <path>", "Workspace directory")
@@ -267,7 +290,7 @@ program
           dir: opts.out,
           baseName: opts.baseName,
           scenesDir: opts.scenesDir,
-          character: opts.character,
+          characters: characterArgs(opts.character),
           trustedCharacter: true,
           godot: { parallax: opts.godotParallax },
         }),
@@ -289,21 +312,28 @@ program
   .requiredOption("--out <file>", "Output .png")
   .option("--mode <mode>", "level | parallax | viewport", "level")
   .option("--camera <x>", "Camera x for viewport/level mode", "0")
-  .option("--character <png>", "Easy Sprite side-view sheet")
+  .option("--character <spec>", "Replace the scene's characters: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
+  .option("--scale <n>", "Integer nearest-neighbour upscale (e.g. 3)", "1")
   .option("--workspace <path>", "Workspace directory")
   .action(async (opts) => {
     const root = defaultWorkspace(opts.workspace);
     const doc = await loadScene(root, opts.id);
     const assets = await loadAssets(root, doc);
-    const sheet = opts.character ?? doc.character?.sheet;
-    const character = sheet ? characterSprite(await loadCharacterSheet(root, sheet, { trusted: true }), Number(opts.camera) + 96) : undefined;
     const camX = Number(opts.camera);
-    const img =
+    const list = characterArgs(opts.character) ?? sceneCharacters(doc);
+    const resolved = await resolveCharacters(root, list, { trusted: true });
+    for (const w of resolved.warnings) console.error(`warn: ${w}`);
+    const characters = resolved.characters.map((c) => c.sprite);
+    const legacy = !doc.characters?.length && !opts.character && characters.length === 1;
+    const viewportY = Math.max(0, doc.height * doc.tileSize - doc.viewport.height);
+    let img =
       opts.mode === "parallax"
-        ? renderParallaxStrip(doc, assets, 3, character)
+        ? renderParallaxStrip(doc, assets, 3, legacy ? characters[0] : characters)
         : opts.mode === "viewport"
-          ? renderScene(doc, assets, { cameraX: camX, cameraY: Math.max(0, doc.height * doc.tileSize - doc.viewport.height), width: doc.viewport.width, height: doc.viewport.height, character })
-          : renderScene(doc, assets, { cameraX: camX, character });
+          ? renderScene(doc, assets, { cameraX: camX, cameraY: viewportY, width: doc.viewport.width, height: doc.viewport.height, characters })
+          : renderScene(doc, assets, { cameraX: camX, characters });
+    const scale = Math.max(1, Math.floor(Number(opts.scale) || 1));
+    if (scale > 1) img = upscale(img, scale);
     await writePng(path.resolve(opts.out), img);
     console.log(`Rendered ${img.width}x${img.height} → ${path.resolve(opts.out)}`);
   });

@@ -95,4 +95,39 @@ describe("MCP server", () => {
       ["prop_bld_shophouse_2f", 144],
     ]);
   });
+
+  it("compose_scene places several characters; render_preview and export_scene draw them", async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { encodePng } = await import("../src/lib/png.js");
+    const { createImage } = await import("../src/shared/raster.js");
+    const sheet = createImage(48 * 30, 48 * 3);
+    for (let i = 0; i < sheet.data.length; i += 4) {
+      const x = (i / 4) % sheet.width;
+      const y = Math.floor(i / 4 / sheet.width) % 48;
+      if (x % 48 > 18 && x % 48 < 30 && y > 27) sheet.data.set([200, 40, 40, 255], i);
+    }
+    await mkdir(path.join(root, "sheets"), { recursive: true });
+    const file = path.join(root, "sheets", "mcp_walker.png");
+    await writeFile(file, encodePng(sheet));
+    const composed = body(
+      await client.callTool({
+        name: "compose_scene",
+        arguments: {
+          id: "mcp_cast",
+          width: 30,
+          characters: [
+            { sheet: file, x: 40, anim: "walk", patrol: { minX: 20, maxX: 160, speed: 25 } },
+            { sheet: file, x: 200, facing: "left", frame: "wave0" },
+          ],
+        },
+      }),
+    );
+    expect(composed.scene.characters).toBe(2);
+    const preview = await client.callTool({ name: "render_preview", arguments: { id: "mcp_cast" } });
+    expect(body(preview).characters).toBe(2);
+    const exported = body(await client.callTool({ name: "export_scene", arguments: { id: "mcp_cast", preset: "pixi" } }));
+    expect(exported.warnings).toEqual([]);
+    expect(exported.paths.some((p: string) => p.endsWith("mcp_walker.png"))).toBe(true);
+  });
 });

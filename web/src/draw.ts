@@ -63,6 +63,25 @@ export interface CharacterDraw {
   x: number;
   col: number;
   row: number;
+  /** Sole row in the 48px frame (default 47, Easy Sprite side view). */
+  groundRow?: number;
+  /** Baseline in world px (default: ground under the character). */
+  y?: number;
+  flipX?: boolean;
+  layer?: "back" | "main" | "front";
+}
+
+/** Lowest opaque row of frame (col,row): where the soles are. */
+export function detectSheetGroundRow(img: HTMLImageElement, col = 0, row = 0): number | undefined {
+  const c = document.createElement("canvas");
+  c.width = 48;
+  c.height = 48;
+  const ctx = c.getContext("2d");
+  if (!ctx) return undefined;
+  ctx.drawImage(img, col * 48, row * 48, 48, 48, 0, 0, 48, 48);
+  const data = ctx.getImageData(0, 0, 48, 48).data;
+  for (let y = 47; y >= 0; y--) for (let x = 0; x < 48; x++) if (data[(y * 48 + x) * 4 + 3]! > 0) return y;
+  return undefined;
 }
 
 /** Draw the scene as seen from camera (camX, camY) into a viewW×viewH region of ctx. */
@@ -74,8 +93,26 @@ export function drawScene(
   camY: number,
   viewW: number,
   viewH: number,
-  character?: CharacterDraw,
+  character?: CharacterDraw | readonly CharacterDraw[],
 ): void {
+  const chars: readonly CharacterDraw[] = !character ? [] : Array.isArray(character) ? character : [character as CharacterDraw];
+  const drawChars = (layer: "back" | "main" | "front") => {
+    for (const ch of chars) {
+      if ((ch.layer ?? "main") !== layer) continue;
+      const base = ch.y ?? surfaceY(doc.tiles, Math.floor((ch.x + 24) / doc.tileSize), doc.tileSize);
+      const top = Math.round(base - ((ch.groundRow ?? 47) + 1) - camY);
+      const left = Math.round(ch.x - camX);
+      if (ch.flipX) {
+        ctx.save();
+        ctx.translate(left + 48, top);
+        ctx.scale(-1, 1);
+        ctx.drawImage(ch.sheet, ch.col * 48, ch.row * 48, 48, 48, 0, 0, 48, 48);
+        ctx.restore();
+      } else {
+        ctx.drawImage(ch.sheet, ch.col * 48, ch.row * 48, 48, 48, left, top, 48, 48);
+      }
+    }
+  };
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, viewW, viewH);
   const assets = assetsOf(parts);
@@ -113,6 +150,7 @@ export function drawScene(
     });
   };
 
+  drawChars("back");
   drawProps("back");
   const atlas = parts.get(doc.tileset);
   if (atlas) {
@@ -128,10 +166,7 @@ export function drawScene(
       }
     }
   }
-  if (character) {
-    const col = Math.floor((character.x + 24) / doc.tileSize);
-    const base = surfaceY(doc.tiles, col, doc.tileSize);
-    ctx.drawImage(character.sheet, character.col * 48, character.row * 48, 48, 48, Math.round(character.x - camX), Math.round(base - 45 - camY), 48, 48);
-  }
+  drawChars("main");
   drawProps("front");
+  drawChars("front");
 }

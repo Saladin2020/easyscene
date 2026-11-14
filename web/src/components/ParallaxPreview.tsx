@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { characterUrl } from "../api";
-import { drawScene, type LoadedPart } from "../draw";
+import { defaultLayout, facingRow, sceneCharacters, stillColumn, walkColumns } from "../../../src/shared/characters";
+import { detectSheetGroundRow, drawScene, type CharacterDraw, type LoadedPart } from "../draw";
+import type { SceneCharacter } from "../types";
 import { rangeFill } from "../ui";
 import type { SceneDoc } from "../types";
 
@@ -23,6 +25,9 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
   const [camX, setCamX] = useState(0);
   const [sheetPath, setSheetPath] = useState(doc.character?.sheet ?? "");
   const [sheet, setSheet] = useState<HTMLImageElement | null>(null);
+  const [sheetGround, setSheetGround] = useState(47);
+  const [cast, setCast] = useState<Array<{ img: HTMLImageElement; spec: SceneCharacter; groundRow: number }>>([]);
+  const castState = useRef<Array<{ x: number; dir: number }>>([]);
   const [msg, setMsg] = useState("");
   const state = useRef({ x: 40, dir: 1, t: 0, cam: 0 });
   const vw = doc.viewport.width;
@@ -36,6 +41,7 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
     try {
       await img.decode();
       setSheet(img);
+      setSheetGround(detectSheetGroundRow(img) ?? 47);
       setMsg(`Character ${label} (${img.naturalWidth}×${img.naturalHeight})`);
     } catch {
       setMsg(`Could not load ${label}`);
@@ -46,6 +52,36 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
     if (doc.character?.sheet) void loadSheet(characterUrl(doc.character.sheet), doc.character.sheet);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
+
+  // the scene's placed cast (`characters`): drawn where they stand, walking in place or on patrol
+  const castKey = JSON.stringify(doc.characters ?? []);
+  useEffect(() => {
+    let alive = true;
+    const specs = sceneCharacters({ characters: doc.characters });
+    void Promise.all(
+      specs.map(async (spec) => {
+        const img = new Image();
+        img.src = characterUrl(spec.sheet);
+        try {
+          await img.decode();
+        } catch {
+          return null;
+        }
+        const layout = defaultLayout({ width: img.naturalWidth, height: img.naturalHeight });
+        const { row } = facingRow(layout, spec.facing ?? "right");
+        return { img, spec, groundRow: spec.groundRow ?? detectSheetGroundRow(img, 0, row) ?? 47 };
+      }),
+    ).then((list) => {
+      if (!alive) return;
+      const ok = list.filter((c): c is NonNullable<typeof c> => Boolean(c));
+      castState.current = ok.map((c) => ({ x: c.spec.x ?? 96, dir: c.spec.facing === "left" ? -1 : 1 }));
+      setCast(ok);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, castKey]);
 
   // whole-number upscaling once there is room for 2×, so game pixels stay even squares
   useEffect(() => {
@@ -87,15 +123,30 @@ export function ParallaxPreview({ doc, parts, walkFrames }: Props) {
       if (c) {
         const ctx = c.getContext("2d")!;
         const frame = walkFrames[Math.floor(s.t / 8) % walkFrames.length] ?? 0;
-        drawScene(ctx, doc, parts, s.cam, Math.max(0, mapH - vh), vw, vh,
-          sheet ? { sheet, x: s.x, col: playing ? frame : 0, row: s.dir > 0 ? 0 : 1 } : undefined);
+        const draws: CharacterDraw[] = cast.map((c, i) => {
+          const st = castState.current[i] ?? { x: c.spec.x ?? 96, dir: 1 };
+          const p = c.spec.patrol;
+          if (playing && p && (p.speed ?? 24) > 0 && p.maxX > p.minX) {
+            st.x += st.dir * ((p.speed ?? 24) / 60) * dt;
+            if (st.x >= p.maxX) { st.x = p.maxX; st.dir = -1; }
+            if (st.x <= p.minX) { st.x = p.minX; st.dir = 1; }
+          }
+          const layout = defaultLayout({ width: c.img.naturalWidth, height: c.img.naturalHeight });
+          const facing = p ? (st.dir < 0 ? "left" : "right") : c.spec.facing ?? "right";
+          const { row, flipX } = facingRow(layout, facing);
+          const walk = walkColumns(layout);
+          const col = c.spec.anim === "walk" && playing ? walk[Math.floor(s.t / 8) % walk.length]! : stillColumn(layout, c.spec);
+          return { sheet: c.img, x: st.x, y: c.spec.y, col, row, flipX, groundRow: c.groundRow, layer: c.spec.layer };
+        });
+        if (sheet) draws.push({ sheet, x: s.x, col: playing ? frame : 0, row: s.dir > 0 ? 0 : 1, groundRow: sheetGround });
+        drawScene(ctx, doc, parts, s.cam, Math.max(0, mapH - vh), vw, vh, draws);
       }
       if (playing) setCamX(Math.round(s.cam));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [doc, parts, playing, speed, sheet, vw, vh, mapW, mapH, walkFrames]);
+  }, [doc, parts, playing, speed, sheet, sheetGround, cast, vw, vh, mapW, mapH, walkFrames]);
 
   return (
     <div className="parallax-box">

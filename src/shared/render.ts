@@ -1,10 +1,11 @@
 /**
  * Scene compositor. Pure: callers hand in decoded part images.
- * Draw order: parallax layers (back→front) · back props · tilemap · character · front props.
+ * Draw order: parallax layers (back→front) · [characters layer "back"] · back props · tilemap ·
+ * characters (default "main") · front props · [characters layer "front"].
  */
 import { applyColor, blit, blitWrapX, createImage, extendUp, type RgbaImage } from "./raster.js";
 import { resolveTile, surfaceY } from "./tiles.js";
-import type { BackgroundPart, PartMeta, PropLayer, SceneDoc, TilesetPart } from "./types.js";
+import type { BackgroundPart, CharacterLayer, PartMeta, PropLayer, SceneDoc, TilesetPart } from "./types.js";
 
 export interface SceneAssets {
   meta(id: string): PartMeta | undefined;
@@ -18,8 +19,15 @@ export interface CharacterSprite {
   col?: number;
   row?: number;
   frameSize?: number;
+  /** Sole row inside the frame (default 47, Easy Sprite side view). */
   groundRow?: number;
+  /** Baseline in world px; default = ground surface under the frame's centre. */
+  y?: number;
+  flipX?: boolean;
+  layer?: CharacterLayer;
 }
+
+export const DEFAULT_GROUND_ROW = 47;
 
 export function mapSize(doc: SceneDoc): { width: number; height: number } {
   return { width: doc.width * doc.tileSize, height: doc.height * doc.tileSize };
@@ -86,15 +94,21 @@ export function renderProps(doc: SceneDoc, assets: SceneAssets, layer: PropLayer
 
 function drawCharacter(out: RgbaImage, doc: SceneDoc, ch: CharacterSprite, camX: number, camY: number): void {
   const fs = ch.frameSize ?? 48;
-  const ground = ch.groundRow ?? 44;
-  const col = Math.floor((ch.x + fs / 2) / doc.tileSize);
-  const base = surfaceY(doc.tiles, col, doc.tileSize);
-  blit(out, ch.sheet, ch.x - camX, base - (ground + 1) - camY, {
+  blit(out, ch.sheet, ch.x - camX, characterTop(doc, ch) - camY, {
     sx: (ch.col ?? 0) * fs,
     sy: (ch.row ?? 0) * fs,
     sw: fs,
     sh: fs,
+    flipX: ch.flipX,
   });
+}
+
+/** World y of the frame's top edge so that its sole row sits on the surface (or on `ch.y`). */
+export function characterTop(doc: SceneDoc, ch: Pick<CharacterSprite, "x" | "y" | "frameSize" | "groundRow">): number {
+  const fs = ch.frameSize ?? 48;
+  const ground = ch.groundRow ?? DEFAULT_GROUND_ROW;
+  const base = ch.y ?? surfaceY(doc.tiles, Math.floor((ch.x + fs / 2) / doc.tileSize), doc.tileSize);
+  return base - (ground + 1);
 }
 
 export interface RenderOptions {
@@ -104,7 +118,9 @@ export interface RenderOptions {
   /** Output size; defaults to the whole map. */
   width?: number;
   height?: number;
+  /** Legacy single character (drawn like a "main" layer character). */
   character?: CharacterSprite;
+  characters?: readonly CharacterSprite[];
   /** Skip parts of the stack (used by per-layer PNG export). */
   include?: { layers?: boolean; tiles?: boolean; props?: boolean };
 }
@@ -138,18 +154,33 @@ export function renderScene(doc: SceneDoc, assets: SceneAssets, opts: RenderOpti
     });
   };
 
+  const chars = [...(opts.character ? [opts.character] : []), ...(opts.characters ?? [])];
+  const drawChars = (layer: CharacterLayer) => {
+    for (const ch of chars) if ((ch.layer ?? "main") === layer) drawCharacter(out, doc, ch, camX, camY);
+  };
+
+  drawChars("back");
   if (inc.props) drawProps("back");
   if (inc.tiles) {
     const tiles = renderTilemap(doc, assets);
     blit(out, tiles, -camX, -camY);
   }
-  if (opts.character) drawCharacter(out, doc, opts.character, camX, camY);
+  drawChars("main");
   if (inc.props) drawProps("front");
+  drawChars("front");
   return out;
 }
 
-/** Stack N viewport snapshots across the level to show parallax depth in one PNG. */
-export function renderParallaxStrip(doc: SceneDoc, assets: SceneAssets, frames = 3, character?: CharacterSprite): RgbaImage {
+/**
+ * Stack N viewport snapshots across the level to show parallax depth in one PNG.
+ * A single sprite walks along with the camera (legacy preview); an array stays at its world positions.
+ */
+export function renderParallaxStrip(
+  doc: SceneDoc,
+  assets: SceneAssets,
+  frames = 3,
+  character?: CharacterSprite | readonly CharacterSprite[],
+): RgbaImage {
   const vw = doc.viewport.width;
   const vh = doc.viewport.height;
   const size = mapSize(doc);
@@ -158,8 +189,10 @@ export function renderParallaxStrip(doc: SceneDoc, assets: SceneAssets, frames =
   const out = createImage(vw, vh * frames + 2 * (frames - 1));
   for (let f = 0; f < frames; f++) {
     const camX = frames === 1 ? 0 : Math.round((maxCam * f) / (frames - 1));
-    const ch = character ? { ...character, x: camX + Math.round(vw / 3) } : undefined;
-    const shot = renderScene(doc, assets, { cameraX: camX, cameraY: camY, width: vw, height: vh, character: ch });
+    const many = Array.isArray(character) ? (character as readonly CharacterSprite[]) : undefined;
+    const one = character && !many ? (character as CharacterSprite) : undefined;
+    const ch = one ? { ...one, x: camX + Math.round(vw / 3) } : undefined;
+    const shot = renderScene(doc, assets, { cameraX: camX, cameraY: camY, width: vw, height: vh, character: ch, characters: many });
     blit(out, shot, 0, f * (vh + 2));
   }
   return out;

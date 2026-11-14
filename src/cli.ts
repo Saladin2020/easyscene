@@ -15,6 +15,7 @@ import { propCategory, type ExportPresetId } from "./shared/types.js";
 import { composeAndSave, loadAssets, resolveCharacters } from "./lib/compose.js";
 import { parseCharacterArg, sceneCharacters } from "./shared/characters.js";
 import type { SceneCharacter } from "./shared/types.js";
+import type { StreetSetId } from "./shared/streetGen.js";
 import { exportScene, type ExportResult } from "./lib/export.js";
 import { writePng } from "./lib/png.js";
 import { getWorkspaceSummary, initWorkspace, loadParts, loadScene, loadScenes, resolveWorkspace, summarizeScene } from "./lib/workspace.js";
@@ -186,6 +187,7 @@ program
   .option("--platform <x,y,len>", "One-way platform, y tiles above ground (repeatable)", collect)
   .option("--prop <part@x[,y][,flip][,front]>", "Place a prop at px x (repeatable)", collect)
   .option("--street <x:part,part,...>", "Chain props edge to edge from px x (repeatable), e.g. 0:prop_bld_noodle_shop,prop_bld_mini_mart", collect)
+  .option("--gen-street <set@x:seed[:count]>", "Seeded street generator (repeatable), e.g. brick_town@0:2026:12 (dressed with trees, lamps, cars, road)", collect)
   .option("--tiles-file <file>", "Text file of tile rows (. # = / \\)")
   .option("--input <file>", "Full compose JSON (ComposeSceneInput); flags override")
   .option("--character <spec>", "Easy Sprite sheet placed in the scene: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
@@ -233,6 +235,11 @@ program
     for (const st of (opts.street as string[] | undefined) ?? []) {
       const [xRaw, list = ""] = st.includes(":") ? st.split(/:(.*)/s) : ["0", st];
       input.streets = [...(input.streets ?? []), { x: Number(xRaw) || 0, items: list.split(",").map((s) => s.trim()).filter(Boolean) }];
+    }
+    for (const g of (opts.genStreet as string[] | undefined) ?? []) {
+      const m = /^([a-z_]+)(?:@(-?\d+))?:(-?\d+)(?::(\d+))?$/.exec(String(g).trim());
+      if (!m) { console.error(`--gen-street: expected set@x:seed[:count], got ${g}`); continue; }
+      input.streets = [...(input.streets ?? []), { x: Number(m[2] ?? 0), generate: { set: m[1] as StreetSetId, seed: Number(m[3]), ...(m[4] ? { count: Number(m[4]) } : {}) } }];
     }
     const cliChars = characterArgs(opts.character);
     if (cliChars) input.characters = [...(input.characters ?? []), ...cliChars];

@@ -148,6 +148,36 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
       { part: "prop_kolek_boat", x: 1690, y: 236, flipX: true, color: "#2a8a5c" },
     ],
   },
+  {
+    // Brick town: a terrace of 19th-century style brick rowhouses and shops on a city street.
+    // The first nine buildings are listed by hand; `generate` appends six more from seed 2026 and
+    // dresses the whole row (trees, lamps, hydrant, planters, bus stop, parked cars, road strip).
+    // Change the seed for a different street; any rowhouse chains with any other.
+    id: "brick_street",
+    name: "Brick street",
+    width: 73,
+    height: 18,
+    layers: ["bg_sky_bright", "bg_far_city_spires", "bg_mid_utility_poles"],
+    tileset: "tiles_city_sidewalk",
+    terrain: { groundHeight: 3 },
+    streets: [
+      {
+        x: 0,
+        items: [
+          "prop_bld_brick_row2_red",
+          "prop_bld_brick_row3_brown",
+          "prop_bld_brick_shop_red",
+          "prop_bld_brick_row3_cream_bay",
+          "prop_bld_brick_row4_tan",
+          "prop_bld_brick_shop_teal",
+          "prop_bld_brick_row2_brown",
+          "prop_bld_brick_row3_red_bay",
+          "prop_bld_brick_shop_cream",
+        ],
+        generate: { set: "brick_town", seed: 2026, count: 6 },
+      },
+    ],
+  },
 ];
 
 export function demoScenes(parts: PartMeta[] = sampleDefs().map((d) => d.meta)): SceneDoc[] {

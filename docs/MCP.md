@@ -71,6 +71,17 @@ Props without `y` snap onto the ground under their centre. Unknown part ids are 
 
 `streets` lays props side by side: each item starts where the previous one ends (`x += width`), from a start `x` snapped down to the 16 px grid. Building parts are 16-px multiples wide, so a street lands on the grid and has no gaps or overlaps. `gap` adds space between every item, `gapBefore` before one item. Items can be ids or `{ part, flipX, color, tint, tintAmount, layer, gapBefore }`. Streets are expanded into ordinary `props` (drawn before the loose `props`), so saved scenes stay plain `easyscene/1`.
 
+A street may instead (or as well) carry `generate: { set: "brick_town", seed, count?, dress? }`: a seeded brick terrace with trees, lamps, a hydrant, planters, a bus stop, parked cars and the road strip. Same seed, same street. Loose props also accept `groundOffset` (px below the ground surface) for road-level art: `prop_city_road` 48, cars 30.
+
+```json
+{
+  "id": "my_brick_street", "width": 64, "height": 18,
+  "layers": ["bg_sky_bright", "bg_far_city_spires", "bg_mid_utility_poles"],
+  "tileset": "tiles_city_sidewalk", "terrain": { "groundHeight": 3 },
+  "streets": [{ "x": 0, "generate": { "set": "brick_town", "seed": 7, "count": 12 } }]
+}
+```
+
 ```json
 {
   "id": "my_soi",

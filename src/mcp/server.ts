@@ -17,6 +17,7 @@ import { OPERATOR_PROMPT_DESCRIPTION, buildOperatorPrompt } from "../shared/oper
 import { renderParallaxStrip, renderScene } from "../shared/render.js";
 import { DEFAULT_SCROLL, EXPORT_PRESETS, LAYER_BANDS, PROP_CATEGORIES, TILE_CODE_LABELS, propCategory } from "../shared/types.js";
 import { checkRequest, resolveToken } from "../shared/requestGuard.js";
+import { STREET_SETS, type StreetSetId } from "../shared/streetGen.js";
 import { composeAndSave, loadAssets, resolveCharacters } from "../lib/compose.js";
 import { sceneCharacters } from "../shared/characters.js";
 import { exportScene } from "../lib/export.js";
@@ -90,6 +91,7 @@ const PropSchema = z.object({
   color: HexSchema.optional(),
   tint: HexSchema.optional(),
   tintAmount: z.number().min(0).max(1).optional(),
+  groundOffset: z.number().optional().describe("px below the ground surface for the baseline when y is omitted (road strips, parked cars: prop_city_road 48, cars 30)"),
 });
 
 const StreetSchema = z.object({
@@ -98,8 +100,14 @@ const StreetSchema = z.object({
   items: z.array(z.union([
     z.string(),
     PropSchema.omit({ x: true }).extend({ gapBefore: z.number().optional().describe("Extra px before this item") }),
-  ])).min(1).describe("Prop ids (or objects with flipX/color/tint) placed left to right"),
-});
+  ])).optional().describe("Prop ids (or objects with flipX/color/tint) placed left to right"),
+  generate: z.object({
+    set: z.enum(STREET_SETS as [StreetSetId, ...StreetSetId[]]).describe("Building set: brick_town"),
+    seed: z.number().int().describe("Same seed = same street"),
+    count: z.number().int().min(0).max(128).optional().describe("Buildings appended after items (default 8; 0 = only dress the listed items)"),
+    dress: z.boolean().optional().describe("Add trees, lamps, hydrants, planters, a bus stop, parked cars and the road strip (default true)"),
+  }).optional().describe("Seeded street generator: appends random buildings from a set and dresses the whole row"),
+}).refine((s) => (s.items?.length ?? 0) > 0 || s.generate, { message: "street needs items or generate" });
 
 const TerrainSchema = z.object({
   groundHeight: z.number().int().min(0).optional().describe("Solid rows at the bottom (default 3)"),
@@ -223,7 +231,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
     {
       title: "Compose scene",
       description:
-        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground. `streets` chains modular buildings edge to edge into a town row. `characters` places Easy Sprite side-view sheets (feet snap to the ground).",
+        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground. `streets` chains modular buildings edge to edge into a town row; `streets[].generate` {set: brick_town, seed, count} builds a seeded, dressed brick street. `characters` places Easy Sprite side-view sheets (feet snap to the ground).",
       inputSchema: {
         id: SceneIdSchema.describe("Scene id slug, e.g. forest_evening"),
         name: z.string().optional(),

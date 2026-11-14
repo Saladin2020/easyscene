@@ -4,6 +4,7 @@
  * unknown parts — it drops them, like Easy Sprite's compose).
  */
 import { normalizeCharacters } from "./characters.js";
+import { dressStreet, generateStreet, type StreetGenerateSpec } from "./streetGen.js";
 import { isHex } from "./raster.js";
 import { buildTiles, normalizeTiles, surfaceY, type TerrainSpec } from "./tiles.js";
 import {
@@ -26,6 +27,11 @@ export interface ComposeLayerInput extends Partial<SceneLayer> {
 export interface ComposePropInput extends Partial<SceneProp> {
   part: string;
   x: number;
+  /**
+   * px below the ground surface under the prop's centre for its baseline (ignored when `y` is set).
+   * Used for road-level props in front of a sidewalk: a road strip, parked cars.
+   */
+  groundOffset?: number;
 }
 
 /** One building in a street row: a part id, or an object with per-building options. */
@@ -40,7 +46,13 @@ export interface ComposeStreetInput {
   x?: number;
   /** px between items (default 0 = touching). */
   gap?: number;
-  items: StreetItem[];
+  /** Buildings left to right (may be empty when `generate` is set). */
+  items?: StreetItem[];
+  /**
+   * Seeded generator: appends `count` buildings from a set (e.g. "brick_town") after `items` and,
+   * unless `dress: false`, adds trees, lamps, hydrants, planters, a bus stop, parked cars and the road.
+   */
+  generate?: StreetGenerateSpec;
 }
 
 export interface ComposeSceneInput {
@@ -79,7 +91,14 @@ export function layoutStreet(
   const props: ComposePropInput[] = [];
   let x = Math.floor((Number.isFinite(street.x) ? street.x! : 0) / tileSize) * tileSize;
   const gap = Number.isFinite(street.gap) ? Math.round(street.gap!) : 0;
-  for (const [i, raw] of street.items.entries()) {
+  const items = [...(Array.isArray(street.items) ? street.items : [])];
+  if (street.generate) {
+    const gen = street.generate.count === 0 ? { items: [] } : generateStreet(street.generate);
+    if (street.generate.count !== 0 && !gen.items.length) warnings.push(`Street generate: unknown set ${JSON.stringify(street.generate.set)}`);
+    items.push(...gen.items);
+  }
+  const placed: Array<{ part: string; x: number; width: number }> = [];
+  for (const [i, raw] of items.entries()) {
     const item = typeof raw === "string" ? { part: raw } : raw;
     const meta = byId.get(item.part);
     if (!meta || meta.kind !== "prop") {
@@ -91,7 +110,14 @@ export function layoutStreet(
     if (i > 0) x += gap;
     if (typeof gapBefore === "number" && Number.isFinite(gapBefore)) x += Math.round(gapBefore);
     props.push({ ...rest, x });
+    placed.push({ part: item.part, x, width: meta.width });
     x += meta.width;
+  }
+  if (street.generate && street.generate.dress !== false) {
+    for (const p of dressStreet(street.generate.set, street.generate.seed, placed)) {
+      if (byId.has(p.part)) props.push(p);
+      else warnings.push(`Street dressing "${p.part}" is not in the workspace (re-run init to add new sample parts)`);
+    }
   }
   return { props, warnings, endX: x };
 }
@@ -218,7 +244,7 @@ export function composeScene(
   // ---- props (street rows first so they draw behind loose props) ----
   const streetProps: ComposePropInput[] = [];
   for (const street of input.streets ?? []) {
-    if (!street || !Array.isArray(street.items)) continue;
+    if (!street || (!Array.isArray(street.items) && !street.generate)) continue;
     const res = layoutStreet(parts, street, tileSize);
     streetProps.push(...res.props);
     warnings.push(...res.warnings);
@@ -232,7 +258,10 @@ export function composeScene(
     }
     const x = Math.round(p.x);
     const centerCol = Math.floor((x + meta.width / 2) / tileSize);
-    const y = typeof p.y === "number" ? Math.round(p.y) : surfaceY(tiles, centerCol, tileSize);
+    const ground = surfaceY(tiles, centerCol, tileSize);
+    const y = typeof p.y === "number"
+      ? Math.round(p.y)
+      : ground + (typeof p.groundOffset === "number" && Number.isFinite(p.groundOffset) ? Math.round(p.groundOffset) : 0);
     const prop: SceneProp = { part: p.part, x, y };
     if (p.flipX) prop.flipX = true;
     if (p.layer === "back" || p.layer === "front") prop.layer = p.layer as PropLayer;

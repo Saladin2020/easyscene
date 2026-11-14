@@ -96,6 +96,10 @@ parts/props/<id>/prop.png           + part.json  { kind: "prop", defaultLayer: "
 
 `compose_scene` / `compose --input` also accept `streets: [{ x?, gap?, items: [id | { part, flipX?, color?, tint?, tintAmount?, layer?, gapBefore? }] }]`. Each street is expanded into ordinary entries in `props` (left to right, `x` snapped to the grid), so the saved scene format is unchanged. CLI: `--street <x>:<id>,<id>,…` (repeatable).
 
+**Seeded streets.** A street can also carry `generate: { set: "brick_town", seed, count?, dress? }`. It appends `count` buildings (default 8, `0` = none) picked from the set after `items` (never the same building twice in a row), and unless `dress: false` it dresses the whole row: street trees, lamp posts and hydrants on the party walls, planters beside the doors, one bus stop in front of a shop, parked cars along the curb and the `prop_city_road` strip under the full length. The same seed always gives the same street. CLI: `--gen-street brick_town@<x>:<seed>[:<count>]` (repeatable).
+
+**`groundOffset`** (compose input only): a prop without `y` stands `groundOffset` px *below* the ground surface under its centre. The road strip uses `48` (it fills a 3-row ground below the 6 px sidewalk lip) and parked cars use `30`; both are front-layer props, so they cover the tile fill but never a character standing on the sidewalk. The saved scene keeps a plain `y`.
+
 ## Sample sets
 
 | Set | Parts |
@@ -104,5 +108,8 @@ parts/props/<id>/prop.png           + part.json  { kind: "prop", defaultLayer: "
 | Street | `prop_power_pole`, `prop_power_pole_end` 240×160 · `prop_flag_pole` · `prop_signpost_th` · `prop_motorbike` · `prop_street_dog` · `prop_cat` · `prop_lantern` · `prop_sign` |
 | Nature / water | `prop_potted_plants` · `prop_flower_box` (front) · `prop_pier` (deck collision; height = 3 ground tiles) · `prop_canal_boat` |
 | Backgrounds / tiles | `bg_far_temple_hill` · `bg_mid_tropical` · `tiles_street` (paving cap over laterite brick) |
+| Brick town buildings | `prop_bld_brick_row2_red` 64 · `prop_bld_brick_row3_brown` 64 · `prop_bld_brick_row2_brown` 64 · `prop_bld_brick_row3_cream_bay` 80 · `prop_bld_brick_row4_tan` 80 · `prop_bld_brick_row3_red_bay` 80 · `prop_bld_brick_shop_red` 80 · `prop_bld_brick_shop_teal` 96 · `prop_bld_brick_shop_cream` 96 (2–4 storeys; party walls opaque from the ground to at least 108 px on both edges) |
+| Brick town street | `prop_street_tree` · `prop_planter_brick` · `prop_lamp_post_city` · `prop_fire_hydrant` · `prop_bus_stop` · `prop_car_hatch_red` · `prop_car_sedan_dark` · `prop_city_road` 128×42 (front, `groundOffset` 48) |
+| Brick town backgrounds / tiles | `bg_sky_bright` · `bg_far_city_spires` · `bg_mid_utility_poles` · `tiles_city_sidewalk` (pale slabs over asphalt) |
 
 A canal is a pit that runs off the map edge: the sky layer's water band shows through it. Set a boat's `y` a few px below the ground line so it floats.

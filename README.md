@@ -49,7 +49,7 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
 
 | Parallax | Tiles | Props |
 | --- | --- | --- |
-| sky (day · dusk · night) · far clouds / mountains / temple hill · mid hills / forest / tropical town · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone · sidewalk + laterite | grouped by category: **buildings** (Thai town set, Muslim kampung set, temple hall, Chinese-Thai shrine, stilt house) · **street** (power poles, flag pole, signposts, motorbike, dog, cat, lantern) · **nature** · **water** (pier, canal boat, kolek boats, stilt fishing hut) · **decor** |
+| sky (day · bright · dusk · night) · far clouds / mountains / temple hill / city spires · mid hills / forest / tropical town / utility poles · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone · sidewalk + laterite · city sidewalk + asphalt | grouped by category: **buildings** (Thai town set, Muslim kampung set, brick town rowhouses, temple hall, Chinese-Thai shrine, stilt house) · **street** (power poles, flag pole, signposts, motorbike, dog, cat, lantern, lamp post, hydrant, bus stop, parked cars, road strip) · **nature** · **water** (pier, canal boat, kolek boats, stilt fishing hut) · **decor** |
 
 <p align="center">
   <img src="docs/assets/forest-evening-parallax.png" width="420" alt="Three camera positions showing parallax depth with an Easy Sprite side-view walker" />
@@ -86,9 +86,19 @@ The demo scene `harmony_town` puts the wat, the shrine, the noodle shop, the rot
   <img src="docs/assets/harmony-scene.png" width="900" alt="harmony_town: temple hall, Chinese-Thai shrine, shops, Malay house and a wooden mosque on one street, a beach with kolek boats" />
 </p>
 
+### Brick town: a terrace that never ends
+
+A second town set in a different style: 19th-century brick rowhouses in red, brown, cream and tan brick, 2 to 4 storeys, with slate mansard and gable roofs, dormers and chimneys, sash windows with stone lintels and sills, bay windows, bracketed cornices, front doors on stone stoops with iron railings, and shop fronts with red/white or teal striped awnings (`prop_bld_brick_*`, 9 buildings). The street dressing has full-canopy street trees, brick planters, a cast-iron lamp post, a fire hydrant, a bus stop, a red hatchback and a dark sedan, and a curb-and-asphalt road strip with a dashed lane line. The backgrounds are a bright sky with puffy clouds (`bg_sky_bright`), a hazy skyline with spires and a clock tower (`bg_far_city_spires`) and utility poles with sagging wires (`bg_mid_utility_poles`), over the `tiles_city_sidewalk` tileset.
+
+Every rowhouse has opaque party walls on both edges from the ground up, so any building chains with any other and a street can run as long as you like. Add `generate` to a street for a seeded one: `{ "x": 0, "generate": { "set": "brick_town", "seed": 7, "count": 12 } }` picks the buildings and dresses the row, and a new seed gives a new street (CLI: `--gen-street brick_town@0:7:12`). The demo scene is `brick_street`.
+
+<p align="center">
+  <img src="docs/assets/brick-street.png" width="900" alt="brick_street: a terrace of red, brown, cream and tan brick rowhouses and shops with striped awnings, street trees, lamp posts and parked cars" />
+</p>
+
 Building rules (any `category: "building"` prop, yours too): width is a multiple of 16, the art reaches both edges of its footprint and the bottom row is the ground line. So a row chains with `x += width`; `streets` in a compose recipe does it for you (`--street 0:prop_bld_thai_house,prop_bld_noodle_shop,…` on the CLI), and in the editor a dragged building snaps to its neighbour's edge (Shift places freely). Thai sign text is pre-rasterized from **Kanit** (SIL OFL 1.1) by `scripts/gen-thai-signs.py`, so no font ships at runtime. `npx tsx scripts/render-catalog.ts <outDir>` renders the street, 3× crops and this catalog.
 
-The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Demo scenes: `village_day`, `forest_evening`, `lantern_night` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing), `thai_village_street` and `harmony_town` (multicultural street).
+The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Demo scenes: `village_day`, `forest_evening`, `lantern_night` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing), `thai_village_street`, `harmony_town` (multicultural street) and `brick_street` (brick terrace).
 
 ---
 

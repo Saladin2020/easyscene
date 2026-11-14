@@ -11,7 +11,7 @@ import { resolveToken } from "./shared/requestGuard.js";
 import { renderParallaxStrip, renderScene } from "./shared/render.js";
 import type { ComposeLayerInput, ComposePropInput, ComposeSceneInput } from "./shared/scene.js";
 import type { TerrainSpec } from "./shared/tiles.js";
-import type { ExportPresetId } from "./shared/types.js";
+import { propCategory, type ExportPresetId } from "./shared/types.js";
 import { characterSprite, composeAndSave, loadAssets, loadCharacterSheet } from "./lib/compose.js";
 import { exportScene, type ExportResult } from "./lib/export.js";
 import { writePng } from "./lib/png.js";
@@ -87,18 +87,22 @@ program
   .command("parts")
   .description("List part ids (never invent ids — use this)")
   .option("--kind <kind>", "background | tileset | prop")
+  .option("--category <cat>", "Prop category: building | street | nature | water | decor")
   .option("--query <q>", "Filter by id, name or tag")
   .option("--workspace <path>", "Workspace directory")
   .option("--json", "JSON output")
-  .action(async (opts: { kind?: string; query?: string; workspace?: string; json?: boolean }) => {
+  .action(async (opts: { kind?: string; category?: string; query?: string; workspace?: string; json?: boolean }) => {
     const q = opts.query?.toLowerCase() ?? "";
     const parts = (await loadParts(defaultWorkspace(opts.workspace))).filter(
-      (p) => (!opts.kind || p.kind === opts.kind) && (!q || [p.id, p.name, ...(p.tags ?? [])].some((s) => s.toLowerCase().includes(q))),
+      (p) =>
+        (!opts.kind || p.kind === opts.kind) &&
+        (!opts.category || (p.kind === "prop" && propCategory(p) === opts.category)) &&
+        (!q || [p.id, p.name, ...(p.tags ?? [])].some((s) => s.toLowerCase().includes(q))),
     );
     print(opts.json, parts, () => {
       for (const p of parts) {
-        const extra = p.kind === "background" ? `${p.band} scroll ${p.defaultScroll}` : p.kind === "prop" ? `${p.defaultLayer}` : `${p.tileSize}px`;
-        console.log(`${p.kind.padEnd(10)} ${p.id.padEnd(20)} ${`${p.width}x${p.height}`.padEnd(8)} ${extra.padEnd(18)} ${p.name}`);
+        const extra = p.kind === "background" ? `${p.band} scroll ${p.defaultScroll}` : p.kind === "prop" ? `${p.defaultLayer} · ${propCategory(p)}` : `${p.tileSize}px`;
+        console.log(`${p.kind.padEnd(10)} ${p.id.padEnd(28)} ${`${p.width}x${p.height}`.padEnd(8)} ${extra.padEnd(18)} ${p.name}`);
       }
     });
   });
@@ -158,6 +162,7 @@ program
   .option("--pit <x,w>", "Gap in the ground (repeatable)", collect)
   .option("--platform <x,y,len>", "One-way platform, y tiles above ground (repeatable)", collect)
   .option("--prop <part@x[,y][,flip][,front]>", "Place a prop at px x (repeatable)", collect)
+  .option("--street <x:part,part,...>", "Chain props edge to edge from px x (repeatable), e.g. 0:prop_bld_noodle_shop,prop_bld_mini_mart", collect)
   .option("--tiles-file <file>", "Text file of tile rows (. # = / \\)")
   .option("--input <file>", "Full compose JSON (ComposeSceneInput); flags override")
   .option("--character <png>", "Easy Sprite side-view sheet for previews")
@@ -202,6 +207,10 @@ program
     input.terrain = terrain;
     if (opts.tilesFile) input.tiles = (await readFile(opts.tilesFile, "utf8")).split(/\r?\n/).filter((r) => r.length);
     if (opts.prop) input.props = [...(input.props ?? []), ...(opts.prop as string[]).map(parseProp)];
+    for (const st of (opts.street as string[] | undefined) ?? []) {
+      const [xRaw, list = ""] = st.includes(":") ? st.split(/:(.*)/s) : ["0", st];
+      input.streets = [...(input.streets ?? []), { x: Number(xRaw) || 0, items: list.split(",").map((s) => s.trim()).filter(Boolean) }];
+    }
     if (opts.character) input.character = { sheet: path.resolve(opts.character) };
 
     const res = await composeAndSave(root, input, opts.scenesDir);

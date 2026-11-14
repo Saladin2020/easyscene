@@ -128,7 +128,7 @@ export function tintRgba(px: RgbaImage["data"], hex: string, amount = 0.35): voi
 
 // ---- hue-aware recolor (same algorithm as Easy Sprite's recolorRgba) ----
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   r /= 255;
   g /= 255;
   b /= 255;
@@ -152,7 +152,7 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h / 6, s, l];
 }
 
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   if (s === 0) {
     const v = Math.round(l * 255);
     return [v, v, v];

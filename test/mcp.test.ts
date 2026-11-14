@@ -69,4 +69,30 @@ describe("MCP server", () => {
     const res = await client.callTool({ name: "get_scene", arguments: { id: "nope" } });
     expect(res.isError).toBe(true);
   });
+  it("filters props by category and chains a street of buildings", async () => {
+    const info = body(await client.callTool({ name: "workspace_info", arguments: {} }));
+    expect(info.propCategories).toContain("building");
+    const blds = body(await client.callTool({ name: "list_parts", arguments: { kind: "prop", category: "building" } }));
+    expect(blds.parts.length).toBeGreaterThanOrEqual(8);
+    expect(blds.parts.every((p: { category: string }) => p.category === "building")).toBe(true);
+
+    const composed = body(
+      await client.callTool({
+        name: "compose_scene",
+        arguments: {
+          id: "mcp_street",
+          width: 40,
+          tileset: "tiles_street",
+          streets: [{ x: 16, items: ["prop_bld_noodle_shop", { part: "prop_bld_shophouse_2f", flipX: true }, "prop_nope"] }],
+        },
+      }),
+    );
+    expect(composed.warnings.join()).toMatch(/prop_nope/);
+    const scene = body(await client.callTool({ name: "get_scene", arguments: { id: "mcp_street" } }));
+    const doc = scene.scene ?? scene;
+    expect(doc.props.map((p: { part: string; x: number }) => [p.part, p.x])).toEqual([
+      ["prop_bld_noodle_shop", 16],
+      ["prop_bld_shophouse_2f", 144],
+    ]);
+  });
 });

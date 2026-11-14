@@ -56,6 +56,27 @@ export interface PropPart extends PartMetaBase {
   defaultLayer: PropLayer;
   /** Optional solid box relative to the prop's top-left, px. */
   collision?: Rect;
+  /**
+   * Browsing group (optional; parts without one are listed under "decor").
+   * `building` parts are modular: width is a multiple of the tile size, the art reaches both edges
+   * of the footprint and the bottom row is the ground line, so they chain with `x += width`.
+   */
+  category?: PropCategory;
+}
+
+export type PropCategory = "building" | "street" | "nature" | "water" | "decor";
+export const PROP_CATEGORIES: PropCategory[] = ["building", "street", "nature", "water", "decor"];
+export const PROP_CATEGORY_LABELS: Record<PropCategory, string> = {
+  building: "Buildings",
+  street: "Street",
+  nature: "Nature",
+  water: "Canal & water",
+  decor: "Decor",
+};
+
+/** A prop's browsing group (falls back to "decor"). */
+export function propCategory(part: Pick<PartMetaBase, "kind"> & { category?: PropCategory }): PropCategory {
+  return part.category && PROP_CATEGORIES.includes(part.category) ? part.category : "decor";
 }
 
 export type PartMeta = BackgroundPart | TilesetPart | PropPart;

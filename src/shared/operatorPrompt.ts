@@ -17,6 +17,8 @@ export function buildOperatorPrompt(request?: string): string {
 3. Recolor with hex only: layer.color remaps the part's recolorBase hue; tint + tintAmount multiplies (e.g. evening "#ff9a6a", 0.3).
 4. Terrain: either pass terrain {groundHeight, hills, pits, platforms} or explicit tiles rows. Tile codes: ${TILE_HELP}.
 5. Props use pixel x (left edge); omit y to snap the prop onto the ground below it.
+   Towns: list_parts category=building, then pass compose_scene streets [{ x, items: [ids…] }] so buildings sit edge to edge on the 16px grid.
+   Chain power poles the same way (prop_power_pole, with prop_power_pole_end last and flipX first) so the wires connect.
 6. Characters are 48px Easy Sprite side-view sheets (feet on row 44). Keep 3+ empty tile rows above the ground so they fit.
 
 ## Flow

@@ -10,3 +10,6 @@ fonts across all seven tools; only the icon and accent colour change.
 | `logo-*.png` (240×240), `logo-*-96.png` | Tool logos; the `-96` set is used by the suite table |
 
 Fonts in the art: Press Start 2P and Kanit (both SIL OFL 1.1). Banner art is real output of the Easy tools.
+
+**v2 (multicultural village):** banners and social previews now show the temple, shrine, kampung house and mosque
+on one street, with a subtle green accent and a light 8-point star (girih) pattern on the same teak, cream and gold palette.

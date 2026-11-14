@@ -156,10 +156,40 @@ export interface SceneDoc {
   props: SceneProp[];
   /** Extra hand-drawn collision boxes (tiles already collide). */
   collision: CollisionRect[];
-  /** Optional easysprite side-view sheet for previews (path, not embedded). */
+  /** Legacy single easysprite side-view sheet (still read; new scenes use `characters`). */
   character?: { sheet: string; x?: number };
+  /** Easy Sprite characters placed in the scene (optional, additive to easyscene/1). */
+  characters?: SceneCharacter[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type CharacterFacing = "right" | "left" | "front";
+export type CharacterAnim = "idle" | "walk";
+/** Where a character is drawn: behind back props, between tiles and front props (default), or over front props. */
+export type CharacterLayer = "back" | "main" | "front";
+export const CHARACTER_FACINGS: readonly CharacterFacing[] = ["right", "left", "front"];
+export const CHARACTER_ANIMS: readonly CharacterAnim[] = ["idle", "walk"];
+
+/** One Easy Sprite sheet placed in the scene. Paths only; images are never embedded. */
+export interface SceneCharacter {
+  /** Path to an Easy Sprite native sheet (.png). A sibling `<stem>.json` export, if present, supplies frames/rows. */
+  sheet: string;
+  /** Label used for node / file names (default: sheet file stem). */
+  name?: string;
+  /** Left edge of the 48px frame in world px (default 96). */
+  x?: number;
+  /** Baseline (feet) in world px. Default: the ground surface under the character's centre. */
+  y?: number;
+  facing?: CharacterFacing;
+  anim?: CharacterAnim;
+  /** Still pose for PNG previews / idle: frame name (`walk1`, `wave0`) or column index. */
+  frame?: string | number;
+  /** Sole row inside the frame. Default: detected from the sheet (Easy Sprite side sheets: 47). */
+  groundRow?: number;
+  layer?: CharacterLayer;
+  /** Walk back and forth between minX and maxX (Pixi + Godot exports). */
+  patrol?: { minX: number; maxX: number; speed?: number };
 }
 
 export interface EasySceneConfig {
@@ -174,7 +204,7 @@ export interface EasySceneConfig {
     columns: number;
     rows: string[];
     walkFrames: number[];
-    /** Feet line inside a 48px frame (side-view ground row). */
+    /** Fallback sole row inside a 48px frame when it cannot be detected from the sheet (Easy Sprite side view: 47). */
     groundRow: number;
   };
 }
@@ -190,7 +220,7 @@ export const DEFAULT_CONFIG: EasySceneConfig = {
     columns: 30,
     rows: ["right", "left", "front"],
     walkFrames: [1, 2, 3, 2],
-    groundRow: 44,
+    groundRow: 47,
   },
 };
 
@@ -212,6 +242,8 @@ export interface SceneSummary {
   height: number;
   layers: number;
   props: number;
+  /** Placed characters (legacy `character` included). */
+  characters: number;
   updatedAt?: string;
 }
 

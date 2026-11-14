@@ -19,7 +19,7 @@ export function buildOperatorPrompt(request?: string): string {
 5. Props use pixel x (left edge); omit y to snap the prop onto the ground below it.
    Towns: list_parts category=building, then pass compose_scene streets [{ x, items: [ids…] }] so buildings sit edge to edge on the 16px grid.
    Chain power poles the same way (prop_power_pole, with prop_power_pole_end last and flipX first) so the wires connect.
-6. Characters are 48px Easy Sprite side-view sheets (feet on row 44). Keep 3+ empty tile rows above the ground so they fit.
+6. Characters are 48px Easy Sprite side-view sheets. Pass compose_scene characters [{ sheet, x, facing right|left|front, anim idle|walk, frame?, patrol? }]; feet snap to the ground (sole row detected, 47 for Easy Sprite). Keep 3+ empty tile rows above the ground so they fit.
 
 ## Flow
 workspace_info → list_parts → compose_scene → render_preview (check it) → export_scene (${EXPORT_PRESETS.map((p) => p.id).join(", ")})

@@ -34,8 +34,8 @@ Cursor `~/.cursor/mcp.json`:
 | `list_parts` | backgrounds (band, scroll, loop width) · tilesets · props (size, default layer, category). Filter `kind`, `band`, `category` (`building` · `street` · `nature` · `water` · `decor`), `query`. |
 | `list_scenes` | saved scenes |
 | `get_scene` | one scene document |
-| `compose_scene` | create/overwrite a scene: `layers`, `tileset`, `terrain {groundHeight, hills, pits, platforms}` or `tiles` rows, `streets` (rows of props chained edge to edge), `props`, `collision`, `character` |
-| `render_preview` | PNG of the whole level (`mode: level`) or 3 camera snapshots (`mode: parallax`); returns the image inline + its path |
+| `compose_scene` | create/overwrite a scene: `layers`, `tileset`, `terrain {groundHeight, hills, pits, platforms}` or `tiles` rows, `streets` (rows of props chained edge to edge), `props`, `collision`, `characters` (Easy Sprite side-view sheets: `sheet`, `x`, `facing`, `anim` idle\|walk, `frame`, `layer`, `patrol`). Legacy `character` still works. |
+| `render_preview` | PNG of the whole level (`mode: level`) or 3 camera snapshots (`mode: parallax`), with every placed character; returns the image inline + its path + character count |
 | `export_scene` | `png` · `godot` · `pixi` into `<dir>/<id>-<preset>/` |
 
 Prompt: `easyscene-operator` (rules + flow).

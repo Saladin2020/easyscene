@@ -3,6 +3,7 @@
  * get back a normalized SceneDoc plus human-readable warnings (never throws on
  * unknown parts — it drops them, like Easy Sprite's compose).
  */
+import { normalizeCharacters } from "./characters.js";
 import { isHex } from "./raster.js";
 import { buildTiles, normalizeTiles, surfaceY, type TerrainSpec } from "./tiles.js";
 import {
@@ -12,6 +13,7 @@ import {
   type EasySceneConfig,
   type PartMeta,
   type PropLayer,
+  type SceneCharacter,
   type SceneDoc,
   type SceneLayer,
   type SceneProp,
@@ -58,7 +60,9 @@ export interface ComposeSceneInput {
   /** Rows of buildings chained edge to edge; expanded into `props` (drawn before them). */
   streets?: ComposeStreetInput[];
   collision?: CollisionRect[];
+  /** Legacy single preview character. */
   character?: { sheet: string; x?: number };
+  characters?: SceneCharacter[];
 }
 
 /**
@@ -260,6 +264,15 @@ export function composeScene(
     collision,
   };
   if (input.character?.sheet) scene.character = { sheet: input.character.sheet, ...(typeof input.character.x === "number" ? { x: Math.round(input.character.x) } : {}) };
+  if (input.characters !== undefined) {
+    const res = normalizeCharacters(input.characters);
+    warnings.push(...res.warnings);
+    if (res.characters.length) scene.characters = res.characters;
+    const mapW = width * tileSize;
+    for (const c of res.characters) {
+      if (typeof c.x === "number" && (c.x + 48 < 0 || c.x > mapW)) warnings.push(`Character "${c.name ?? c.sheet}" at x=${c.x} is outside the map`);
+    }
+  }
   return { scene, warnings };
 }
 
@@ -280,6 +293,7 @@ export function normalizeScene(parts: readonly PartMeta[], doc: SceneDoc, config
       props: doc.props,
       collision: doc.collision,
       character: doc.character,
+      characters: doc.characters,
     },
     config,
   );

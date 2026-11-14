@@ -5,10 +5,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RgbaImage } from "../shared/raster.js";
-import { layerImage, layerWorldY, mapSize, propImage, propLayerOf, renderParallaxStrip, renderProps, renderScene, renderTilemap, type CharacterSprite, type SceneAssets } from "../shared/render.js";
+import { characterTop, layerImage, layerWorldY, mapSize, propImage, propLayerOf, renderParallaxStrip, renderProps, renderScene, renderTilemap, type CharacterSprite, type SceneAssets } from "../shared/render.js";
 import { ATLAS_COLUMNS, atlasIndex, mergeRuns, resolveTile, tileShape } from "../shared/tiles.js";
 import type { BackgroundPart, CollisionRect, ExportPresetId, PropPart, SceneDoc, TilesetPart } from "../shared/types.js";
-import { characterSprite, loadAssets, loadCharacterSheet } from "./compose.js";
+import { facingRow, sceneCharacters, walkColumns } from "../shared/characters.js";
+import type { SceneCharacter } from "../shared/types.js";
+import { loadAssets, resolveCharacters, type ResolvedCharacter } from "./compose.js";
 import { encodePng } from "./png.js";
 import { assertSafeId, loadScene, resolveOutDir } from "./workspace.js";
 
@@ -20,8 +22,10 @@ export interface ExportOptions {
   dir?: string;
   baseName?: string;
   scenesDir?: string;
-  /** Easy Sprite side-view sheet drawn into preview PNGs. */
+  /** Legacy: one Easy Sprite side-view sheet that replaces the scene's characters. */
   character?: string;
+  /** Replace the scene's characters for this export (CLI `--character`, repeatable). */
+  characters?: SceneCharacter[];
   /** CLI only: allow reading the character sheet from any path. */
   trustedCharacter?: boolean;
   godot?: { parallax?: "parallax2d" | "legacy" };
@@ -180,7 +184,54 @@ interface GodotFiles {
   tileset: string;
   /** Optional preview script on the Camera2D (arrow keys pan the level). */
   cameraScript?: string;
+  /** Character sheets copied into the project, by character index. */
+  characters?: Array<{ ch: ResolvedCharacter; res: string }>;
+  /** Patrol script for characters with `patrol`. */
+  patrolScript?: string;
 }
+
+/** Column of the idle animation: the explicit still `frame`, else the sheet's idle frame. */
+function idleColumn(ch: ResolvedCharacter): number {
+  return ch.spec.frame !== undefined ? (ch.sprite.col ?? 0) : Math.max(0, ch.layout.frames.indexOf("idle"));
+}
+
+/** Godot animation names for a character: idle_<dir> / walk_<dir> per sheet row. */
+export function godotAnimName(anim: string, dir: string): string {
+  return `${anim}_${dir}`;
+}
+
+const PATROL_GD = `extends AnimatedSprite2D
+## Easy Scene character patrol: walks between min_x and max_x, turning at each end.
+## Uses walk_left / walk_right (or flips walk_right when the sheet has no left row).
+
+@export var min_x := 0.0
+@export var max_x := 0.0
+@export var speed := 24.0
+var _dir := 1.0
+
+func _ready() -> void:
+	_dir = -1.0 if (String(animation).ends_with("_left") or flip_h) else 1.0
+
+func _face(dir: float) -> void:
+	_dir = dir
+	if dir < 0.0 and sprite_frames.has_animation("walk_left"):
+		flip_h = false
+		play("walk_left")
+	else:
+		flip_h = dir < 0.0
+		play("walk_right")
+
+func _process(delta: float) -> void:
+	if max_x <= min_x or speed <= 0.0:
+		return
+	position.x += _dir * speed * delta
+	if position.x >= max_x:
+		position.x = max_x
+		_face(-1.0)
+	elif position.x <= min_x:
+		position.x = min_x
+		_face(1.0)
+`;
 
 const CAMERA_PAN_GD = `extends Camera2D
 ## Easy Scene preview camera: arrow keys pan across the level so you can check the parallax.
@@ -220,6 +271,72 @@ export function buildGodotTscn(
   const rootName = pascal(doc.id);
   nodes.push(`[node name="${rootName}" type="Node2D"]`);
 
+  // ---- characters: one SpriteFrames per sheet (idle_<dir>, walk_<dir>), one AnimatedSprite2D each
+  const framesBySheet = new Map<string, string>();
+  const spriteFramesFor = (ch: ResolvedCharacter, res: string): string => {
+    const idleCol = idleColumn(ch);
+    const known = framesBySheet.get(`${res}#${idleCol}`);
+    if (known) return known;
+    const tex = addExt("Texture2D", res);
+    const fs = ch.layout.frameSize;
+    const key = `${slug(path.basename(res, ".png")).slice(0, 24)}_${idleCol}`;
+    const atlas = new Map<string, string>();
+    const atlasTex = (col: number, row: number) => {
+      const k = `${col}_${row}`;
+      const hit = atlas.get(k);
+      if (hit) return hit;
+      const id = `AtlasTexture_${key}_${k}`;
+      subs.push(`[sub_resource type="AtlasTexture" id="${id}"]\natlas = ExtResource("${tex}")\nregion = Rect2(${col * fs}, ${row * fs}, ${fs}, ${fs})`);
+      atlas.set(k, id);
+      return id;
+    };
+    const walk = walkColumns(ch.layout);
+    const anims: string[] = [];
+    ch.layout.directions.forEach((dir, row) => {
+      for (const [anim, cols, speed] of [["idle", [idleCol], 1], ["walk", walk, 6]] as const) {
+        const frames = cols.map((c) => `{\n"duration": 1.0,\n"texture": SubResource("${atlasTex(c, row)}")\n}`).join(", ");
+        anims.push(`{\n"frames": [${frames}],\n"loop": true,\n"name": &"${godotAnimName(anim, dir)}",\n"speed": ${speed}.0\n}`);
+      }
+    });
+    const id = `SpriteFrames_${key}`;
+    subs.push(`[sub_resource type="SpriteFrames" id="${id}"]\nanimations = [${anims.join(", ")}]`);
+    framesBySheet.set(`${res}#${idleCol}`, id);
+    return id;
+  };
+  const patrolId = files.characters?.some((c) => c.ch.spec.patrol) && files.patrolScript ? addExt("Script", files.patrolScript) : null;
+  const characterNodes = (layer: "back" | "main" | "front", parent: string): string[] =>
+    (files.characters ?? [])
+      .filter(({ ch }) => (ch.spec.layer ?? "main") === layer)
+      .map(({ ch, res }) => {
+        const framesId = spriteFramesFor(ch, res);
+        const facing = ch.spec.facing ?? "right";
+        const { flipX } = facingRow(ch.layout, facing);
+        const dir = flipX ? "right" : ch.layout.directions.includes(facing) ? facing : ch.layout.directions[0]!;
+        const anim = godotAnimName(ch.spec.anim ?? "idle", dir);
+        const s = ch.sprite;
+        const top = characterTop(doc, s);
+        const lines = [
+          `[node name="C${ch.index}_${ch.label}" type="AnimatedSprite2D" parent="${parent}"]`,
+          ...(ch.spec.patrol && patrolId ? [`script = ExtResource("${patrolId}")`] : []),
+          `position = Vector2(${s.x}, ${top})`,
+          `sprite_frames = SubResource("${framesId}")`,
+          `animation = &"${anim}"`,
+          `autoplay = "${anim}"`,
+          `centered = false`,
+          ...(flipX ? ["flip_h = true"] : []),
+        ];
+        if (ch.spec.patrol && patrolId) {
+          lines.push(`min_x = ${num(ch.spec.patrol.minX)}`, `max_x = ${num(ch.spec.patrol.maxX)}`, `speed = ${num(ch.spec.patrol.speed ?? 24)}`);
+        }
+        return lines.join("\n");
+      });
+  const pushCharacters = (layer: "back" | "main" | "front", name: string, z?: number) => {
+    const list = characterNodes(layer, name);
+    if (!list.length) return;
+    nodes.push(`[node name="${name}" type="Node2D" parent="."]${z !== undefined ? `\nz_index = ${z}` : ""}`);
+    nodes.push(...list);
+  };
+
   // ---- parallax
   const parallaxParent = legacy ? "ParallaxBackground" : "Parallax";
   nodes.push(legacy ? `[node name="ParallaxBackground" type="ParallaxBackground" parent="."]` : `[node name="Parallax" type="Node2D" parent="."]`);
@@ -257,6 +374,7 @@ texture = ExtResource("${tex}")
 centered = false
 position = Vector2(${p.x}, ${p.y - h})${p.flipX ? "\nflip_h = true" : ""}`;
   };
+  pushCharacters("back", "CharactersBack");
   nodes.push(`[node name="PropsBack" type="Node2D" parent="."]`);
   doc.props.forEach((_, i) => {
     if (propLayerOf(doc, assets, i) === "back") nodes.push(propNode(i, "PropsBack"));
@@ -282,10 +400,12 @@ shape = SubResource("${sid}")${r.oneWay ? "\none_way_collision = true" : ""}`);
     });
   }
 
+  pushCharacters("main", "Characters", 5);
   nodes.push(`[node name="PropsFront" type="Node2D" parent="."]\nz_index = 10`);
   doc.props.forEach((_, i) => {
     if (propLayerOf(doc, assets, i) === "front") nodes.push(propNode(i, "PropsFront"));
   });
+  pushCharacters("front", "CharactersFront", 11);
 
   const vw = doc.viewport.width;
   const vh = doc.viewport.height;
@@ -349,20 +469,19 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
     if (!assets.image(id)) warnings.push(`Missing part image: ${id}`);
   }
 
-  let character: CharacterSprite | undefined;
-  const sheetPath = opts.character ?? doc.character?.sheet;
-  if (sheetPath) {
-    try {
-      const sheet = await loadCharacterSheet(root, sheetPath, { trusted: opts.trustedCharacter });
-      character = characterSprite(sheet, opts.character ? 96 : doc.character?.x ?? 96);
-    } catch (e) {
-      warnings.push(`Character preview skipped: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
+  const override = opts.characters?.length ? opts.characters : opts.character ? [{ sheet: opts.character }] : undefined;
+  const list = override ?? sceneCharacters(doc);
+  const resolved = await resolveCharacters(root, list, { trusted: opts.trustedCharacter });
+  warnings.push(...resolved.warnings);
+  const chars = resolved.characters;
+  const sprites: CharacterSprite[] = chars.map((c) => c.sprite);
+  // one legacy preview character keeps walking along with the strip camera; a cast stays where it was placed
+  const legacyOnly = !doc.characters?.length && !opts.characters?.length && sprites.length === 1;
+  const outDoc: SceneDoc = override ? { ...doc, character: undefined, characters: override as SceneCharacter[] } : doc;
 
   const tilesetMeta = assets.meta(doc.tileset) as TilesetPart | undefined;
-  const preview = renderScene(doc, assets, { character });
-  const strip = renderParallaxStrip(doc, assets, 3, character);
+  const preview = renderScene(doc, assets, { characters: sprites });
+  const strip = renderParallaxStrip(doc, assets, 3, legacyOnly ? sprites[0] : sprites);
 
   if (preset === "png") {
     for (let i = 0; i < doc.layers.length; i++) {
@@ -375,7 +494,7 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
     await files.png("props_front.png", renderProps(doc, assets, "front"));
     await files.png(`${base}_preview.png`, preview);
     await files.png(`${base}_parallax.png`, strip);
-    await files.text(`${base}.scene.json`, `${JSON.stringify(doc, null, 2)}\n`);
+    await files.text(`${base}.scene.json`, `${JSON.stringify(outDoc, null, 2)}\n`);
   }
 
   if (preset === "godot") {
@@ -402,13 +521,38 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
     const tsRes = `res://${base}_tileset.tres`;
     if (tilesetMeta) await files.text(`${base}_tileset.tres`, buildTileSetTres(tilesetMeta, "res://assets/tileset.png"));
     await files.text("camera_pan.gd", CAMERA_PAN_GD);
-    const tscn = buildGodotScene(doc, assets, { layers: layerFiles, props: propFiles, tileset: tsRes, cameraScript: "res://camera_pan.gd" }, opts.godot);
+    const charFiles: NonNullable<GodotFiles["characters"]> = [];
+    const sheetRel = new Map<string, string>();
+    for (const ch of chars) {
+      let rel = sheetRel.get(ch.file);
+      if (!rel) {
+        rel = `assets/characters/${ch.label}.png`;
+        await files.png(rel, ch.image);
+        sheetRel.set(ch.file, rel);
+      }
+      charFiles.push({ ch, res: `res://${rel}` });
+    }
+    const hasPatrol = chars.some((c) => c.spec.patrol);
+    if (hasPatrol) await files.text("character_patrol.gd", PATROL_GD);
+    const tscn = buildGodotScene(
+      doc,
+      assets,
+      {
+        layers: layerFiles,
+        props: propFiles,
+        tileset: tsRes,
+        cameraScript: "res://camera_pan.gd",
+        characters: charFiles,
+        ...(hasPatrol ? { patrolScript: "res://character_patrol.gd" } : {}),
+      },
+      opts.godot,
+    );
     await files.text(`${base}.tscn`, tscn);
     await files.text("project.godot", godotProject(doc, `res://${base}.tscn`, layerImage(doc, assets, 0)));
     await files.png(`${base}_preview.png`, preview);
     await files.text(
       "README.txt",
-      `Easy Scene export — ${doc.name}\n\nOpen this folder as a Godot 4.3+ project (project.godot) or copy it into your project.\nMain scene: ${base}.tscn (Parallax2D layers, TileMapLayer with ${base}_tileset.tres, props, Camera2D).\nPress F5, then the arrow keys to pan the preview camera (camera_pan.gd).\nIf you copy it into another project, keep the folder at res:// root or search/replace "res://" paths.\nTiles collide on physics layer 1; '=' platforms are one-way.\nTextures use Nearest filtering (project setting). Generated by Easy Scene; sample art is CC0.\n`,
+      `Easy Scene export — ${doc.name}\n\nOpen this folder as a Godot 4.3+ project (project.godot) or copy it into your project.\nMain scene: ${base}.tscn (Parallax2D layers, TileMapLayer with ${base}_tileset.tres, props, Camera2D${chars.length ? `, ${chars.length} AnimatedSprite2D characters with idle_<dir> / walk_<dir> SpriteFrames` : ""}).\nPress F5, then the arrow keys to pan the preview camera (camera_pan.gd).\nIf you copy it into another project, keep the folder at res:// root or search/replace "res://" paths.\nTiles collide on physics layer 1; '=' platforms are one-way.\nTextures use Nearest filtering (project setting). Generated by Easy Scene; sample art is CC0.\n`,
     );
   }
 
@@ -454,6 +598,38 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
       }
       props.push({ part: p.part, image: rel, x: p.x, y: p.y - img.height, width: img.width, height: img.height, flipX: Boolean(p.flipX), layer: propLayerOf(doc, assets, i) });
     }
+    const characters = [];
+    const sheetRel = new Map<string, string>();
+    for (const ch of chars) {
+      let rel = sheetRel.get(ch.file);
+      if (!rel) {
+        rel = `characters/${ch.label}.png`;
+        await files.png(rel, ch.image);
+        sheetRel.set(ch.file, rel);
+      }
+      const rows: Record<string, { row: number; flipX: boolean }> = {};
+      for (const f of ["right", "left", "front"] as const) {
+        if (f === "front" && !ch.layout.directions.includes("front")) continue;
+        rows[f] = facingRow(ch.layout, f);
+      }
+      const s = ch.sprite;
+      characters.push({
+        name: ch.label,
+        image: rel,
+        frameSize: ch.layout.frameSize,
+        groundRow: ch.groundRow,
+        x: s.x,
+        y: characterTop(doc, s),
+        ...(typeof ch.spec.y === "number" ? { baselineY: ch.spec.y } : {}),
+        facing: ch.spec.facing ?? "right",
+        anim: ch.spec.anim ?? "idle",
+        layer: ch.spec.layer ?? "main",
+        rows,
+        animations: { idle: [idleColumn(ch)], walk: walkColumns(ch.layout) },
+        fps: 6,
+        ...(ch.spec.patrol ? { patrol: { speed: 24, ...ch.spec.patrol } } : {}),
+      });
+    }
     const { width: pw, height: ph } = mapSize(doc);
     const col = collisionSummary(doc, assets);
     const json = {
@@ -469,6 +645,7 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
       tileset: { image: "tileset.png", tileSize: tilesetMeta?.tileSize ?? doc.tileSize, columns: tilesetMeta?.columns ?? ATLAS_COLUMNS, rows: tilesetMeta?.rows },
       tilemap: { width: doc.width, height: doc.height, data, codes: doc.tiles },
       props,
+      characters,
       collision: { solid: col.solid, oneWay: col.oneWay, slopes: col.slopes },
     };
     await files.text(`${base}.pixi.json`, `${JSON.stringify(json, null, 2)}\n`);
@@ -484,11 +661,12 @@ export const buildGodotScene = buildGodotTscn;
 
 
 const PIXI_LOADER = `// Easy Scene → PixiJS v8 loader (ES module). Usage:
-//   import { Application } from "pixi.js";
+//   import * as PIXI from "pixi.js";            // or the global PIXI from pixi.min.js
 //   import { loadEasyScene } from "./load-scene.js";
-//   const app = new Application(); await app.init({ width: 480, height: 270, antialias: false });
+//   const app = new PIXI.Application(); await app.init({ width: 480, height: 270, antialias: false });
 //   const scene = await loadEasyScene(PIXI, "./my_scene.pixi.json"); app.stage.addChild(scene.root);
-//   app.ticker.add(() => scene.setCamera(cameraX, cameraY));
+//   app.ticker.add((t) => { scene.update(t.deltaMS / 1000); scene.setCamera(cameraX); });
+// Characters (json.characters) are AnimatedSprites: walk cycles play on their own, update(dt) moves patrols.
 export async function loadEasyScene(PIXI, url) {
   const base = new URL(".", new URL(url, location.href)).href;
   const json = await (await fetch(url)).json();
@@ -508,6 +686,7 @@ export async function loadEasyScene(PIXI, url) {
   }
   const world = new PIXI.Container();
   root.addChild(world);
+  const charLayers = { back: new PIXI.Container(), main: new PIXI.Container(), front: new PIXI.Container() };
   const addProps = async (which) => {
     for (const p of json.props.filter((p) => p.layer === which)) {
       const s = new PIXI.Sprite(await tex(p.image));
@@ -517,6 +696,7 @@ export async function loadEasyScene(PIXI, url) {
       world.addChild(s);
     }
   };
+  world.addChild(charLayers.back);
   await addProps("back");
   const atlas = await tex(json.tileset.image);
   const ts = json.tileset.tileSize;
@@ -530,9 +710,71 @@ export async function loadEasyScene(PIXI, url) {
     tiles.addChild(s);
   });
   world.addChild(tiles);
-  const characters = new PIXI.Container();
+  const characters = charLayers.main;
   world.addChild(characters);
   await addProps("front");
+  world.addChild(charLayers.front);
+
+  // ground surface under a world x (same rule as Easy Scene: first solid / slope tile from the top)
+  const codes = json.tilemap.codes;
+  const surfaceAt = (px) => {
+    const col = Math.max(0, Math.min(json.tilemap.width - 1, Math.floor(px / ts)));
+    for (let y = 0; y < codes.length; y++) {
+      const c = codes[y][col];
+      if (c === "#") return y * ts;
+      if (c === "/" || c === "\\\\") return y * ts + ts / 2;
+    }
+    return codes.length * ts;
+  };
+
+  const actors = [];
+  for (const c of json.characters ?? []) {
+    const sheet = await tex(c.image);
+    const fs = c.frameSize;
+    const cache = new Map();
+    const framesFor = (facing, anim) => {
+      const key = facing + ":" + anim;
+      if (!cache.has(key)) {
+        const r = c.rows[facing] ?? c.rows.right ?? { row: 0, flipX: false };
+        const cols = c.animations[anim] ?? c.animations.idle;
+        const textures = cols.map((col) => new PIXI.Texture({ source: sheet.source, frame: new PIXI.Rectangle(col * fs, r.row * fs, fs, fs) }));
+        cache.set(key, { textures, flipX: r.flipX });
+      }
+      return cache.get(key);
+    };
+    const first = framesFor(c.facing, c.anim);
+    const sprite = new PIXI.AnimatedSprite(first.textures);
+    sprite.animationSpeed = (c.fps ?? 6) / 60;
+    sprite.play();
+    const actor = { c, sprite, x: c.x, dir: c.facing === "left" ? -1 : 1, flipX: first.flipX };
+    actor.setAnim = (facing, anim) => {
+      const f = framesFor(facing, anim);
+      sprite.textures = f.textures;
+      sprite.play();
+      actor.flipX = f.flipX;
+    };
+    actor.place = () => {
+      const top = c.baselineY !== undefined ? c.baselineY - (c.groundRow + 1) : surfaceAt(actor.x + fs / 2) - (c.groundRow + 1);
+      sprite.scale.x = actor.flipX ? -1 : 1;
+      sprite.x = Math.round(actor.x) + (actor.flipX ? fs : 0);
+      sprite.y = top;
+    };
+    actor.place();
+    (charLayers[c.layer] ?? characters).addChild(sprite);
+    actors.push(actor);
+  }
+
+  function update(dt) {
+    for (const a of actors) {
+      const p = a.c.patrol;
+      if (!p || !(p.speed > 0) || p.maxX <= p.minX) continue;
+      a.x += a.dir * p.speed * dt;
+      if (a.x >= p.maxX) { a.x = p.maxX; a.dir = -1; a.setAnim("left", "walk"); }
+      else if (a.x <= p.minX) { a.x = p.minX; a.dir = 1; a.setAnim("right", "walk"); }
+      a.place();
+    }
+  }
+
   function setCamera(x, y = Math.max(0, json.size.height - json.viewport.height)) {
     world.x = -Math.round(x);
     world.y = -Math.round(y);
@@ -542,6 +784,6 @@ export async function loadEasyScene(PIXI, url) {
     }
   }
   setCamera(0);
-  return { json, root, world, characters, setCamera };
+  return { json, root, world, characters, charLayers, actors, update, setCamera };
 }
 `;

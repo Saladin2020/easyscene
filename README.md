@@ -99,7 +99,8 @@ npx tsx src/cli.ts compose --id forest_evening --name "Forest evening" --width 7
   --ground 3 --hill 30,6,2 --pit 46,3 --platform 19,3,5 --platform 44,3,6 \
   --prop prop_house@150 --prop prop_tree_pine@520,flip --prop prop_bush@980,front \
   --street 1200:prop_bld_noodle_shop,prop_bld_shophouse_2f \
-  --character ../easysprite/exports/walker_side.png \
+  --character ../easysprite/exports/walker_side.png:96:right:walk \
+  --character ../easysprite/exports/auntie_side.png:540:front \
   --export all --out ./my-exports
 npx tsx src/cli.ts export --id forest_evening --preset godot --out ./my-exports
 npx tsx src/cli.ts render --id forest_evening --mode parallax --out parallax.png
@@ -121,7 +122,30 @@ Everything is nearest-neighbour. Scene JSON: [`docs/SCENE_FORMAT.md`](docs/SCENE
 
 ### Easy Sprite characters
 
-Point the preview at any Easy Sprite **side-view** native sheet (1440×144 · rows `right left front` · 48px frames). The editor's parallax preview walks it across the level (`walk0–2`), and PNG previews draw it standing on the ground. Paths must be inside the workspace or `EASYSCENE_ALLOWED_DIRS`.
+Put a whole cast of Easy Sprite **side-view** native sheets (1440×144 · rows `right left front` · 48px frames) into a scene. Each one has its own `x`, `facing`, `anim` (`idle` / `walk`), still `frame`, draw `layer` and optional `patrol`. Their feet snap onto the ground. The sole row is detected from the sheet: row 47 for Easy Sprite side sheets. If a sibling `<sheet>.json` export sits next to the PNG, Easy Scene reads the frame order and rows from it.
+
+<p align="center">
+  <img src="docs/assets/thai-village-cast.png" width="720" alt="Six Easy Sprite characters in the Thai village street: farmer, vendor, monk in a saffron robe, student, kid, elder" />
+</p>
+
+```bash
+# --character path[:x[:facing[:anim[:frame]]]]  (repeatable; empty fields keep defaults)
+npx tsx src/cli.ts compose --id thai_village_cast --input scenes/thai_village_street.json \
+  --character cast/town_farmer.png:64:right:walk:walk1 \
+  --character cast/town_vendor.png:156:front \
+  --character cast/town_monk.png:248:right:walk \
+  --character cast/town_elder.png:848:left:walk \
+  --export all
+npx tsx src/cli.ts render --id thai_village_cast --mode viewport --camera 160 --scale 3 --out cast@3x.png
+```
+
+| Export | Characters become |
+| --- | --- |
+| `png` | drawn into `*_preview.png` / `*_parallax.png` at their still frame |
+| `pixi` | `characters/*.png` + `json.characters` (rows, `idle`/`walk` columns, fps, patrol). `load-scene.js` builds a `PIXI.AnimatedSprite` per character. Call `scene.update(dt)` each tick to move patrols. |
+| `godot` | `assets/characters/*.png`, a `SpriteFrames` per sheet (`idle_<dir>`, `walk_<dir>`), an autoplaying `AnimatedSprite2D` per character under `Characters` / `CharactersBack` / `CharactersFront`, plus `character_patrol.gd` for patrols |
+
+The old single `"character": { sheet, x }` field and a single `--character sheet.png` still work. The editor's parallax preview animates the placed cast and also has its own **Walker** sheet that follows the camera. Paths must be inside the workspace or `EASYSCENE_ALLOWED_DIRS`; the CLI may read any path you give it.
 
 ---
 

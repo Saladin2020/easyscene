@@ -157,6 +157,7 @@ export function summarizeScene(doc: SceneDoc): SceneSummary {
     height: doc.height,
     layers: doc.layers.length,
     props: doc.props.length,
+    characters: (doc.character?.sheet ? 1 : 0) + (doc.characters?.length ?? 0),
     updatedAt: doc.updatedAt,
   };
 }

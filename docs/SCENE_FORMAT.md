@@ -27,9 +27,32 @@ A scene is one JSON file in `scenes/<id>.json`. Agents and humans can both edit 
     { "part": "prop_bush", "x": 980, "y": 224, "layer": "front", "flipX": true }
   ],
   "collision": [{ "x": 500, "y": 150, "w": 32, "h": 8, "oneWay": true }],
-  "character": { "sheet": "/path/to/easysprite_side.png", "x": 96 }   // optional, previews only
+  "characters": [                     // optional: Easy Sprite side-view sheets placed in the scene
+    { "sheet": "/path/to/farmer_side.png", "x": 64, "facing": "right", "anim": "walk",
+      "patrol": { "minX": 24, "maxX": 110, "speed": 26 } },
+    { "sheet": "/path/to/vendor_side.png", "x": 156, "facing": "front", "frame": "idle", "layer": "front" }
+  ]
 }
 ```
+
+## Characters
+
+`characters` is an optional, additive field: the format stays `easyscene/1`, and readers that don't know the field just ignore it. The legacy single `"character": { "sheet", "x" }` is still read and is drawn before `characters`.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `sheet` | — | Easy Sprite native sheet (`.png`). A sibling `<stem>.json` export (`easysprite.native`) supplies `frames`, `directions` and `frameSize`. Without one, Easy Scene assumes the side-view layout: 30 frames, rows `right left front`. |
+| `name` | sheet stem | label for exported node / file names |
+| `x` | `96` | left edge of the 48px frame (world px) |
+| `y` | ground | baseline (feet) in world px. Default: the first solid or slope tile under the frame's centre. |
+| `facing` | `right` | `right` · `left` · `front`. A sheet with no `left` row uses `right` mirrored. |
+| `anim` | `idle` | `idle` · `walk` (walk0 walk1 walk2 walk1) |
+| `frame` | `idle` / `walk0` | still pose for PNG previews and the idle animation: frame name (`wave0`, `sit`) or column |
+| `groundRow` | detected | sole row inside the frame: the lowest opaque row of the idle frame. Easy Sprite side sheets → `47`. Earlier versions assumed `44`, which buried feet by 3px. |
+| `layer` | `main` | `back` = behind back props · `main` = in front of tiles, behind front props · `front` = over front props |
+| `patrol` | — | `{ minX, maxX, speed? }`: walks back and forth in Pixi (`update(dt)`) and Godot (`character_patrol.gd`). The baseline follows the ground in Pixi. In Godot it stays at the start height. |
+
+CLI: `--character path[:x[:facing[:anim[:frame]]]]`, repeatable (`hero.png::left` keeps the default `x`). Put patrols, `layer`, `y` or `groundRow` in a `--input` JSON.
 
 ## Tile codes
 

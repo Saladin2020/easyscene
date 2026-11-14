@@ -17,7 +17,8 @@ import { OPERATOR_PROMPT_DESCRIPTION, buildOperatorPrompt } from "../shared/oper
 import { renderParallaxStrip, renderScene } from "../shared/render.js";
 import { DEFAULT_SCROLL, EXPORT_PRESETS, LAYER_BANDS, PROP_CATEGORIES, TILE_CODE_LABELS, propCategory } from "../shared/types.js";
 import { checkRequest, resolveToken } from "../shared/requestGuard.js";
-import { characterSprite, composeAndSave, loadAssets, loadCharacterSheet } from "../lib/compose.js";
+import { composeAndSave, loadAssets, resolveCharacters } from "../lib/compose.js";
+import { sceneCharacters } from "../shared/characters.js";
 import { exportScene } from "../lib/export.js";
 import { encodePng } from "../lib/png.js";
 import { getWorkspaceSummary, loadParts, loadScene, loadScenes, resolveOutDir, resolveWorkspace, summarizeScene } from "../lib/workspace.js";
@@ -64,6 +65,20 @@ const LayerSchema = z.object({
   tint: HexSchema.optional().describe("Multiply tint toward this hex"),
   tintAmount: z.number().min(0).max(1).optional(),
   offsetY: z.number().int().optional().describe("Extra vertical offset in px (+ = down)"),
+});
+
+const CharacterSchema = z.object({
+  sheet: z.string().describe("Easy Sprite native side-view sheet (.png); a sibling .json export supplies frames/rows"),
+  name: z.string().optional(),
+  x: z.number().optional().describe("Left edge of the 48px frame in px (default 96)"),
+  y: z.number().optional().describe("Baseline (feet) in px; default = ground under the character"),
+  facing: z.enum(["right", "left", "front"]).optional(),
+  anim: z.enum(["idle", "walk"]).optional(),
+  frame: z.union([z.string(), z.number().int().min(0)]).optional().describe("Still pose: frame name (walk1, wave0, sit) or column"),
+  groundRow: z.number().int().min(0).max(255).optional().describe("Sole row in the frame (default: detected, 47 for Easy Sprite side sheets)"),
+  layer: z.enum(["back", "main", "front"]).optional().describe("back = behind back props · main (default) = in front of tiles · front = over front props"),
+  patrol: z.object({ minX: z.number(), maxX: z.number(), speed: z.number().min(0).optional() }).optional()
+    .describe("Walk back and forth (Pixi + Godot exports)"),
 });
 
 const PropSchema = z.object({
@@ -128,7 +143,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         },
         propCategories: PROP_CATEGORIES,
         sceneCount: s.scenes.length,
-        note: "Compose only — use part ids from list_parts. Layers back→front (sky, far, mid, near), max 5.",
+        note: "Compose only — use part ids from list_parts. Layers back→front (sky, far, mid, near), max 5. Characters: pass Easy Sprite side-view sheets in compose_scene.characters (x, facing, anim idle|walk, frame, patrol).",
       });
     },
   );
@@ -208,7 +223,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
     {
       title: "Compose scene",
       description:
-        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground. `streets` chains modular buildings edge to edge into a town row.",
+        "Create or overwrite a side-view scene from part ids. Layers back→front (max 5). Terrain from {groundHeight, hills, pits, platforms} or explicit tile rows. Unknown parts are dropped with warnings. Props without y snap onto the ground. `streets` chains modular buildings edge to edge into a town row. `characters` places Easy Sprite side-view sheets (feet snap to the ground).",
       inputSchema: {
         id: SceneIdSchema.describe("Scene id slug, e.g. forest_evening"),
         name: z.string().optional(),
@@ -224,7 +239,9 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         collision: z.array(z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number(), oneWay: z.boolean().optional() })).optional()
           .describe("Extra collision rects in px"),
         character: z.object({ sheet: z.string(), x: z.number().optional() }).optional()
-          .describe("Easy Sprite side-view sheet path for previews (must be inside allowed folders)"),
+          .describe("Legacy: one Easy Sprite side-view sheet for previews. Prefer `characters`."),
+        characters: z.array(CharacterSchema).max(64).optional()
+          .describe("Easy Sprite side-view characters placed in the scene (sheets must be inside allowed folders). Drawn in PNG previews, exported as AnimatedSprite2D (Godot) and AnimatedSprite (Pixi)."),
       },
     },
     async (input) => {
@@ -253,15 +270,13 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
       try {
         const doc = await loadScene(root, id);
         const assets = await loadAssets(root, doc);
-        let character;
-        if (doc.character?.sheet) {
-          try {
-            character = characterSprite(await loadCharacterSheet(root, doc.character.sheet), doc.character.x ?? 96);
-          } catch {
-            character = undefined;
-          }
-        }
-        const img = mode === "parallax" ? renderParallaxStrip(doc, assets, 3, character) : renderScene(doc, assets, { cameraX, character });
+        const resolved = await resolveCharacters(root, sceneCharacters(doc));
+        const characters = resolved.characters.map((c) => c.sprite);
+        const legacy = !doc.characters?.length && characters.length === 1;
+        const img =
+          mode === "parallax"
+            ? renderParallaxStrip(doc, assets, 3, legacy ? characters[0] : characters)
+            : renderScene(doc, assets, { cameraX, characters });
         const outDir = resolveOutDir(root, dir, path.join("exports", "previews"));
         await mkdir(outDir, { recursive: true });
         const file = path.join(outDir, `${id}_${mode ?? "level"}.png`);
@@ -269,7 +284,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         await writeFile(file, png);
         return {
           content: [
-            { type: "text" as const, text: JSON.stringify({ path: file, width: img.width, height: img.height }) },
+            { type: "text" as const, text: JSON.stringify({ path: file, width: img.width, height: img.height, characters: characters.length, warnings: resolved.warnings }) },
             { type: "image" as const, data: png.toString("base64"), mimeType: "image/png" },
           ],
         };

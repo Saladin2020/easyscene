@@ -109,6 +109,45 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
       { part: "prop_canal_boat", x: 1236, y: 238 },
     ],
   },
+  {
+    // Multicultural village: the wat, the Chinese-Thai shrine and the mosque share one street;
+    // the road runs on past the kampung to a fishing beach with kolek boats.
+    id: "harmony_town",
+    name: "Harmony town · วัด มัสยิด ศาลเจ้า",
+    width: 112,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_far_temple_hill", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3, pits: [{ x: 92, width: 20 }] },
+    streets: [
+      {
+        x: 0,
+        items: [
+          "prop_bld_wat_sala",
+          "prop_bld_chinese_shrine",
+          "prop_bld_noodle_shop",
+          "prop_bld_roti_teashop",
+          "prop_bld_halal_stall",
+          "prop_bld_fruit_stall",
+          "prop_bld_malay_house",
+          "prop_bld_mosque_wooden",
+        ],
+      },
+    ],
+    props: [
+      { part: "prop_flower_box", x: 134 },
+      { part: "prop_street_dog", x: 230 },
+      { part: "prop_motorbike", x: 470 },
+      { part: "prop_cat", x: 620 },
+      { part: "prop_potted_plants", x: 700 },
+      { part: "prop_lantern", x: 1150 },
+      { part: "prop_flag_pole", x: 1170 },
+      { part: "prop_fish_rack", x: 1290 },
+      { part: "prop_signpost_th", x: 1400 },
+      { part: "prop_fisher_hut", x: 1480, y: 258 },
+      { part: "prop_kolek_boat", x: 1600, y: 234 },
+      { part: "prop_kolek_boat", x: 1690, y: 236, flipX: true, color: "#2a8a5c" },
+    ],
+  },
 ];
 
 export function demoScenes(parts: PartMeta[] = sampleDefs().map((d) => d.meta)): SceneDoc[] {

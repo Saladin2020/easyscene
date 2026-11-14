@@ -20,6 +20,7 @@ import { ATLAS_COLUMNS, ATLAS_ROWS, MASK_E, MASK_N, MASK_S, MASK_W } from "../sh
 import type { BackgroundPart, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, TilesetPart } from "../shared/types.js";
 import { writePng } from "./png.js";
 import { TOWN_DRAW } from "./sampleTown.js";
+import { KAMPUNG_DRAW } from "./sampleKampung.js";
 import {
   H, LEAF, type Rgb, W, WATER_Y, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
   setPx, setWrap, sphereLight, stamp, vnoise, wrapX,
@@ -1135,6 +1136,16 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_cat", "Cat", 16, 12, "back", "#e09444", ["animal", "cat", "thai-town"], TOWN_DRAW.cat, undefined, "street"),
     prop("prop_pier", "Wooden pier", 64, 48, "back", "#8c5630", ["pier", "canal", "boardwalk", "thai-town"], TOWN_DRAW.pier, { x: 0, y: 0, w: 64, h: 6 }, "water"),
     prop("prop_canal_boat", "Canal boat", 64, 20, "back", "#8c5630", ["boat", "canal", "floating-market", "thai-town"], TOWN_DRAW.canalBoat, undefined, "water"),
+    // ---- multicultural village (src/lib/sampleKampung.ts): Muslim kampung + temple + shrine ----
+    building("prop_bld_mosque_wooden", "Wooden mosque (มัสยิด, Talo Mano style)", 176, 176, "#9c6436", ["mosque", "muslim", "kampung", "southern-thai", "multicultural"], KAMPUNG_DRAW.mosqueWooden),
+    building("prop_bld_malay_house", "Malay raised house (บ้านมลายู)", 128, 136, "#6aa286", ["house", "malay", "kampung", "stilts", "muslim", "multicultural"], KAMPUNG_DRAW.malayHouse),
+    building("prop_bld_roti_teashop", "Roti + tea shop (ร้านน้ำชา)", 128, 112, "#2a8a5c", ["shop", "food", "roti", "tea", "kampung", "muslim", "multicultural"], KAMPUNG_DRAW.rotiTeaShop),
+    building("prop_bld_halal_stall", "Halal food stall (ฮาลาล)", 96, 80, "#2a8a5c", ["shop", "food", "halal", "market", "kampung", "muslim", "multicultural"], KAMPUNG_DRAW.halalStall),
+    building("prop_bld_wat_sala", "Temple hall (วัด / ubosot)", 128, 144, "#cc3a34", ["temple", "wat", "buddhist", "multicultural"], KAMPUNG_DRAW.watSala),
+    building("prop_bld_chinese_shrine", "Chinese-Thai shrine (ศาลเจ้า)", 80, 96, "#cc3a34", ["shrine", "chinese-thai", "san-jao", "multicultural"], KAMPUNG_DRAW.chineseShrine),
+    prop("prop_kolek_boat", "Kolek boat (เรือกอและ)", 96, 36, "back", "#cc3a34", ["boat", "kolek", "fishing", "coast", "kampung", "southern-thai"], KAMPUNG_DRAW.kolekBoat, undefined, "water"),
+    prop("prop_fish_rack", "Fish drying rack (ราวตากปลา)", 48, 32, "back", "#c8c45a", ["fishing", "coast", "kampung", "market"], KAMPUNG_DRAW.fishRack, undefined, "decor"),
+    prop("prop_fisher_hut", "Stilt fishing hut (บ้านชาวประมง)", 96, 88, "back", "#a88a44", ["house", "fishing", "coast", "kampung", "stilts"], KAMPUNG_DRAW.fisherHut, { x: 0, y: 54, w: 96, h: 6 }, "water"),
   ];
 }
 

@@ -18,6 +18,7 @@ export function buildOperatorPrompt(request?: string): string {
 4. Terrain: either pass terrain {groundHeight, hills, pits, platforms} or explicit tiles rows. Tile codes: ${TILE_HELP}.
 5. Props use pixel x (left edge); omit y to snap the prop onto the ground below it.
    Towns: list_parts category=building, then pass compose_scene streets [{ x, items: [ids…] }] so buildings sit edge to edge on the 16px grid.
+   Multicultural towns (วัด + มัสยิด + ศาลเจ้า): prop_bld_wat_sala, prop_bld_chinese_shrine, prop_bld_mosque_wooden, prop_bld_malay_house, prop_bld_roti_teashop, prop_bld_halal_stall; coast: prop_kolek_boat, prop_fisher_hut, prop_fish_rack. See the harmony_town demo scene.
    Chain power poles the same way (prop_power_pole, with prop_power_pole_end last and flipX first) so the wires connect.
 6. Characters are 48px Easy Sprite side-view sheets. Pass compose_scene characters [{ sheet, x, facing right|left|front, anim idle|walk, frame?, patrol? }]; feet snap to the ground (sole row detected, 47 for Easy Sprite). Keep 3+ empty tile rows above the ground so they fit.
 

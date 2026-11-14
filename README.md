@@ -49,7 +49,7 @@ Build a whole side-scroller level without hand-placing every layer: stack 3–5 
 
 | Parallax | Tiles | Props |
 | --- | --- | --- |
-| sky (day · dusk · night) · far clouds / mountains / temple hill · mid hills / forest / tropical town · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone · sidewalk + laterite | grouped by category: **buildings** (Thai town set + stilt house) · **street** (power poles, flag pole, signposts, motorbike, dog, cat, lantern) · **nature** · **water** (pier, canal boat) · **decor** |
+| sky (day · dusk · night) · far clouds / mountains / temple hill · mid hills / forest / tropical town · near bushes, each with its own scroll factor, seamless loop, recolor / tint | ground (16-variant autotile) · one-way platforms · 45° slopes, in grass · grass-night · stone · sidewalk + laterite | grouped by category: **buildings** (Thai town set, Muslim kampung set, temple hall, Chinese-Thai shrine, stilt house) · **street** (power poles, flag pole, signposts, motorbike, dog, cat, lantern) · **nature** · **water** (pier, canal boat, kolek boats, stilt fishing hut) · **decor** |
 
 <p align="center">
   <img src="docs/assets/forest-evening-parallax.png" width="420" alt="Three camera positions showing parallax depth with an Easy Sprite side-view walker" />
@@ -76,9 +76,19 @@ Modular Thai-style buildings that chain into a town: noodle shop, mini mart (gen
   <img src="docs/assets/thai-town-catalog.png" width="900" alt="Labeled catalog of every sample prop, grouped by category" />
 </p>
 
+### Multicultural village: วัด · ศาลเจ้า · มัสยิด
+
+Thai towns are shared by Buddhist, Muslim and Chinese-Thai neighbours, and the samples now build that street. The **Muslim kampung set** (southern Thai / Thai-Malay) adds a wooden mosque after Talo Mano in Narathiwat (`prop_bld_mosque_wooden`: raised chengal hall, two-tier clay-tile roof, carved star vents, wooden minaret with a small dome and crescent), a Malay raised house with sun-ray gable and foot-wash jar (`prop_bld_malay_house`), a roti + tea shop with teh tarik and a dove cage (`prop_bld_roti_teashop`), and a halal food stall with a generic green ฮาลาล plate (`prop_bld_halal_stall`, not any official certification mark). Next to them: a small temple hall (`prop_bld_wat_sala`) and a Chinese-Thai shrine (`prop_bld_chinese_shrine`). The fishing kampung adds painted kolek boats (`prop_kolek_boat`, เรือกอและ), a stilt fishing hut over the water (`prop_fisher_hut`) and a fish drying rack (`prop_fish_rack`).
+
+The demo scene `harmony_town` puts the wat, the shrine, the noodle shop, the roti shop, the halal stall, the Malay house and the mosque on one street, then runs on to a beach with kolek boats. The cast below is Easy Sprite side-view: a monk, a hijab teacher, a Tadika girl, a kopiah boy, a kain pelekat fisher and neighbours.
+
+<p align="center">
+  <img src="docs/assets/harmony-scene.png" width="900" alt="harmony_town: temple hall, Chinese-Thai shrine, shops, Malay house and a wooden mosque on one street, a beach with kolek boats" />
+</p>
+
 Building rules (any `category: "building"` prop, yours too): width is a multiple of 16, the art reaches both edges of its footprint and the bottom row is the ground line. So a row chains with `x += width`; `streets` in a compose recipe does it for you (`--street 0:prop_bld_thai_house,prop_bld_noodle_shop,…` on the CLI), and in the editor a dragged building snaps to its neighbour's edge (Shift places freely). Thai sign text is pre-rasterized from **Kanit** (SIL OFL 1.1) by `scripts/gen-thai-signs.py`, so no font ships at runtime. `npx tsx scripts/render-catalog.ts <outDir>` renders the street, 3× crops and this catalog.
 
-The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Four themes ship as demo scenes: `village_day`, `forest_evening`, `lantern_night` and `thai_village_street` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing).
+The samples share one light direction (top-left), hue-shifted ramps and dithered atmospheric haze on far layers, so you can mix any sky with any layer. Demo scenes: `village_day`, `forest_evening`, `lantern_night` (`bg_sky_night` + `tiles_grass_night`, with props tinted blue and lanterns left glowing), `thai_village_street` and `harmony_town` (multicultural street).
 
 ---
 
@@ -214,7 +224,7 @@ workflow (CLI · web editor · MCP server) and the same targets (**Godot 4.3+** 
 | | Tool | What it does | Repo |
 |:-:|---|---|---|
 | <img src="docs/brand/logo-sprite-96.png" width="40" alt="" /> | [**Easy Sprite**](https://github.com/Saladin2020/easysprite) | Compose modular 48px chibi characters (top-down + side-view) and export sheets. | [`easysprite`](https://github.com/Saladin2020/easysprite) |
-| <img src="docs/brand/logo-scene-96.png" width="40" alt="" /> | **Easy Scene** ← you are here | Side-view levels: parallax layers, 16px autotiles, Thai town props. | [`easyscene`](https://github.com/Saladin2020/easyscene) |
+| <img src="docs/brand/logo-scene-96.png" width="40" alt="" /> | **Easy Scene** ← you are here | Side-view levels: parallax layers, 16px autotiles, multicultural Thai town props. | [`easyscene`](https://github.com/Saladin2020/easyscene) |
 | <img src="docs/brand/logo-dialogue-96.png" width="40" alt="" /> | [**Easy Dialogue**](https://github.com/Saladin2020/easydialogue) | Branching `.ezd` dialogue with Thai-safe text, portraits and choices. | [`easydialogue`](https://github.com/Saladin2020/easydialogue) |
 | <img src="docs/brand/logo-tilemap-96.png" width="40" alt="" /> | [**Easy Tilemap**](https://github.com/Saladin2020/easytilemap) | Top-down 16px maps: blob-47 autotiles, objects, collision, spawns. | [`easytilemap`](https://github.com/Saladin2020/easytilemap) |
 | <img src="docs/brand/logo-quest-96.png" width="40" alt="" /> | [**Easy Quest**](https://github.com/Saladin2020/easyquest) | Text `.ezq` quests: steps, flags, items, rewards, linked to dialogue. | [`easyquest`](https://github.com/Saladin2020/easyquest) |

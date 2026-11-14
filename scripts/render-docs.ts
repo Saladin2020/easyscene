@@ -82,6 +82,8 @@ try {
 
   const street = await loadScene(root, "thai_village_street");
   await writePng(path.join(outDir, "thai-village-street.png"), renderScene(street, await loadAssets(root, street), { character: sheet && characterSprite(sheet, 560) }));
+  const brick = await loadScene(root, "brick_street");
+  await writePng(path.join(outDir, "brick-street.png"), renderScene(brick, await loadAssets(root, brick), { character: sheet && characterSprite(sheet, 300) }));
   const townProps = (await loadParts(root)).filter((p): p is PropPart => p.kind === "prop");
   const ordered = PROP_CATEGORIES.flatMap((c) => townProps.filter((p) => propCategory(p) === c));
   await writePng(path.join(outDir, "thai-town-catalog.png"), await renderCatalog(root, ordered, { maxWidth: 1000 }));

@@ -13,3 +13,10 @@ const res = JSON.parse(
 console.log("exports", res.exports.map((e) => `${e.preset}:${e.paths.length}`).join(" "));
 const tscn = readFileSync(path.join(out, "smoke_scene-godot", "smoke_scene.tscn"), "utf8");
 console.log("tscn_ok", tscn.includes("TileMapLayer") && tscn.includes("Parallax2D"));
+
+// seeded brick street from the CLI generator
+const brick = JSON.parse(
+  run("compose", "--id", "smoke_brick", "--width", "48", "--height", "18", "--layers", "bg_sky_bright,bg_far_city_spires,bg_mid_utility_poles",
+    "--tileset", "tiles_city_sidewalk", "--gen-street", "brick_town@0:7:8", "--export", "png,godot", "--out", out, "--json"),
+);
+console.log("brick_ok", brick.warnings.length === 0 && brick.scene.props.some((p) => p.part === "prop_city_road") && brick.exports.length === 2);

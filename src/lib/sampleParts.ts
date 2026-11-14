@@ -21,6 +21,7 @@ import type { BackgroundPart, LayerBand, PartMeta, PropCategory, PropLayer, Prop
 import { writePng } from "./png.js";
 import { TOWN_DRAW } from "./sampleTown.js";
 import { KAMPUNG_DRAW } from "./sampleKampung.js";
+import { BRICK_DRAW, ROAD_H, ROWHOUSES, rowhouse, rowhouseHeight } from "./sampleBrick.js";
 import {
   H, LEAF, type Rgb, W, WATER_Y, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
   setPx, setWrap, sphereLight, stamp, vnoise, wrapX,
@@ -164,6 +165,19 @@ function skyDay(): RgbaImage {
   const spots: Array<[number, number, number]> = [[60, 92, 70], [210, 70, 96], [345, 104, 56], [430, 64, 84]];
   for (const [i, [x, y, w]] of spots.entries()) cloud(img, x, y, w, DAY_CLOUDS, 100 + i);
   waterBand(img, ramp("#2a5f92", "#3a7cb0", "#5a9ccc", "#86c2e2"), rgb("#e4f6fb"), 3);
+  return img;
+}
+
+/** Bright summer sky: saturated zenith, pale horizon, big puffy cumulus (brick town). */
+function skyBright(): RgbaImage {
+  const img = createImage(W, H);
+  gradientSky(img, [[0, "#1660c8"], [0.3, "#2a7ade"], [0.62, "#5ea6ec"], [0.86, "#a6d4f4"], [1, "#e2f2fa"]], 10);
+  const pal: CloudPalette = { hi: rgb("#ffffff"), base: rgb("#f4f8fc"), shade: rgb("#d2e0f0"), deep: rgb("#a6bede") };
+  const spots: Array<[number, number, number, number]> = [[50, 70, 92, 1.2], [180, 112, 60, 1], [282, 58, 120, 1.25], [400, 100, 74, 1.1], [462, 40, 40, 0.9]];
+  for (const [i, [x, y, w, k]] of spots.entries()) cloud(img, x, y, w, pal, 900 + i, k);
+  const r = rng(13);
+  for (let i = 0; i < 3; i++) streak(img, Math.floor(r() * W), 20 + Math.floor(r() * 24), 40 + r() * 40, rgb("#9ccaf0"), rgb("#d6ecfa"), 30 + i);
+  waterBand(img, ramp("#2a5f92", "#3a7cb0", "#5a9ccc", "#86c2e2"), rgb("#e4f6fb"), 4);
   return img;
 }
 
@@ -495,6 +509,33 @@ const STREET: TilePalette = {
   rope: rgb("#d8c08a"),
   cap: "paving",
 };
+
+/** City sidewalk: pale concrete slabs over dark asphalt fill (pair with prop_city_road for the curb + lane). */
+const CITY: TilePalette = {
+  grass: ramp("#5c5a60", "#7e7c80", "#a6a29e", "#c8c2b8", "#e6e0d4"),
+  fill: ramp("#121216", "#1a1a20", "#24242c", "#2e2e36", "#3a3a42", "#4a4a52"),
+  pebble: ramp("#1a1a20", "#3a3a42", "#5a5a62"),
+  edge: rgb("#0c0c10"),
+  plank: ramp("#4e301c", "#7a5030", "#a06a3c", "#c48a50", "#e4b072"),
+  rope: rgb("#d8c08a"),
+  cap: "paving",
+};
+
+/** Seamless 16×16 asphalt: fine aggregate grain, a few bright stones and tar patches. */
+function asphaltTexture(p: TilePalette, depth = 0): Rgb[][] {
+  const f = p.fill;
+  const tex: Rgb[][] = [];
+  for (let y = 0; y < 16; y++) {
+    const row: Rgb[] = [];
+    for (let x = 0; x < 16; x++) {
+      const n = vnoise(x, y, 4, 91, 16) * 0.6 + hash(x, y, 92) * 0.4;
+      const base = n > 0.72 ? f[3 - depth]! : n < 0.3 ? f[1]! : f[2]!;
+      row.push(hash(x, y, 93) > 0.94 ? f[5 - depth]! : base);
+    }
+    tex.push(row);
+  }
+  return tex;
+}
 
 /** Paved kerb depth (rows) — constant so every tile lines up. */
 const PAVING_DEPTH = 6;
@@ -1092,6 +1133,10 @@ function prop(
 const building = (id: string, name: string, w: number, h: number, recolorBase: string, tags: string[], draw: () => RgbaImage) =>
   prop(id, name, w, h, "back", recolorBase, ["building", "thai-town", ...tags], draw, undefined, "building");
 
+/** Brick-town rowhouse: same modular rules as `building`, tagged brick-town instead of thai-town. */
+const brickBuilding = (id: string, name: string, w: number, h: number, recolorBase: string, tags: string[], draw: () => RgbaImage) =>
+  prop(id, name, w, h, "back", recolorBase, ["building", "brick-town", ...tags], draw, undefined, "building");
+
 export function sampleDefs(): SampleDef[] {
   return [
     bg("bg_sky_day", "Sky · day", "sky", 0.05, "#8fc7e8", ["sky", "day"], skyDay),
@@ -1108,6 +1153,8 @@ export function sampleDefs(): SampleDef[] {
     bg("bg_far_temple_hill", "Temple hill", "far", 0.2, "#6f9a7a", ["hills", "temple", "chedi", "thai-town"], TOWN_DRAW.templeHill),
     bg("bg_mid_tropical", "Palms + old town", "mid", 0.45, "#3f8a4e", ["palms", "tropical", "town", "thai-town"], TOWN_DRAW.tropicalMid),
     ts("tiles_street", "Sidewalk + laterite", "#96908e", ["street", "sidewalk", "town", "thai-town"], tileset(STREET, brickTexture)),
+    bg("bg_sky_bright", "Sky · bright (puffy clouds)", "sky", 0.05, "#2a7ade", ["sky", "day", "clouds", "brick-town"], skyBright),
+    ts("tiles_city_sidewalk", "City sidewalk + asphalt", "#a6a29e", ["street", "sidewalk", "asphalt", "city", "brick-town"], tileset(CITY, asphaltTexture)),
     prop("prop_tree_oak", "Oak tree", 48, 64, "back", "#4f9a4a", ["tree"], oakTree, undefined, "nature"),
     prop("prop_tree_pine", "Pine tree", 32, 64, "back", "#3f7d52", ["tree", "forest"], pineTree, undefined, "nature"),
     prop("prop_house", "Stilt house", 80, 72, "back", "#c45c26", ["house", "village"], house, undefined, "building"),
@@ -1146,6 +1193,19 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_kolek_boat", "Kolek boat (เรือกอและ)", 96, 36, "back", "#cc3a34", ["boat", "kolek", "fishing", "coast", "kampung", "southern-thai"], KAMPUNG_DRAW.kolekBoat, undefined, "water"),
     prop("prop_fish_rack", "Fish drying rack (ราวตากปลา)", 48, 32, "back", "#c8c45a", ["fishing", "coast", "kampung", "market"], KAMPUNG_DRAW.fishRack, undefined, "decor"),
     prop("prop_fisher_hut", "Stilt fishing hut (บ้านชาวประมง)", 96, 88, "back", "#a88a44", ["house", "fishing", "coast", "kampung", "stilts"], KAMPUNG_DRAW.fisherHut, { x: 0, y: 54, w: 96, h: 6 }, "water"),
+    // ---- brick town (src/lib/sampleBrick.ts): modular rowhouses + city street dressing ----
+    bg("bg_far_city_spires", "City skyline + spires", "far", 0.2, "#7c96b4", ["city", "skyline", "spires", "brick-town"], BRICK_DRAW.citySpires),
+    bg("bg_mid_utility_poles", "Utility poles + wires", "mid", 0.5, "#56402c", ["city", "power-lines", "pole", "brick-town"], BRICK_DRAW.utilityPoles),
+    ...Object.entries(ROWHOUSES).map(([id, r]) =>
+      brickBuilding(id, r.name, r.spec.w, rowhouseHeight(r.spec), r.recolorBase, r.tags, () => rowhouse(r.spec))),
+    prop("prop_street_tree", "Street tree (full canopy)", 64, 112, "back", "#468e40", ["tree", "city", "brick-town"], BRICK_DRAW.streetTree, undefined, "nature"),
+    prop("prop_planter_brick", "Brick planter", 32, 24, "back", "#9c3a26", ["planter", "flowers", "city", "brick-town"], BRICK_DRAW.planter, undefined, "decor"),
+    prop("prop_lamp_post_city", "Cast-iron lamp post", 16, 88, "back", "#262e32", ["lamp", "light", "city", "brick-town"], BRICK_DRAW.lampPost, undefined, "street"),
+    prop("prop_fire_hydrant", "Fire hydrant", 12, 18, "back", "#b82c28", ["hydrant", "city", "brick-town"], BRICK_DRAW.hydrant, undefined, "street"),
+    prop("prop_bus_stop", "Bus stop shelter", 64, 64, "back", "#7a8494", ["bus", "shelter", "city", "brick-town"], BRICK_DRAW.busStop, undefined, "street"),
+    prop("prop_car_hatch_red", "Parked hatchback (red)", 56, 30, "front", "#b82c28", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.redHatch, undefined, "street"),
+    prop("prop_car_sedan_dark", "Parked sedan (dark)", 72, 28, "front", "#343c4c", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.darkSedan, undefined, "street"),
+    prop("prop_city_road", "Road strip (curb + lanes)", 128, ROAD_H, "front", "#2c2c34", ["road", "asphalt", "curb", "lane", "city", "brick-town"], BRICK_DRAW.roadStrip, undefined, "street"),
   ];
 }
 

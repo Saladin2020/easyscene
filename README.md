@@ -149,6 +149,49 @@ npx tsx src/cli.ts export --id forest_evening --preset godot --out ./my-exports
 npx tsx src/cli.ts render --id forest_evening --mode parallax --out parallax.png
 ```
 
+**Towns for a world map.** `town` composes one seeded side-view street per town kind, and `towns` builds one
+for every town of an [Easy Tilemap](https://github.com/Saladin2020/easytilemap) overworld map
+(`easytilemap generate overworld`), ready for its Godot or Pixi export (`--town-scenes`):
+
+```bash
+npx tsx src/cli.ts town --id town_bunga --kind malay_kampung --seed 3 --name-th กำปงบุหงา --name-en "Kampung Bunga" --export godot
+npx tsx src/cli.ts towns --from-overworld ../easytilemap/maps/world.json --export godot,pixi --out ./town-exports
+```
+
+| Kind | Street |
+| --- | --- |
+| `thai_town` | teak houses, a wat sala, shophouses, noodle shop and mini mart under power lines, temple hill behind |
+| `malay_kampung` | wooden mosque, Malay raised houses, roti teashop, halal stall and fruit stall (halal food only), ending at a fishing beach with kolek boats |
+| `chinese_town` | Chinese-Thai shophouses around a shrine, lanterns along the street |
+| `rural_village` | teak houses with gardens, fences and trees on grass under the hills |
+| `brick_city` | the seeded `brick_town` terrace (trees, lamps, cars, road) |
+
+Town scenes carry `exits` (street ends that lead back to the world map; the kampung only its landward end)
+and `town` (kind, overworld town and map id). For those scenes the Godot export also writes `<id>.scene.json`
+next to the `.tscn`, and the Pixi export adds `exits` / `town` to `<id>.pixi.json`, so the Easy Tilemap
+overworld game can run the street in Godot or in the browser (`--export godot,pixi`). Scenes without exits
+export exactly as before. MCP: `compose_town` and `towns_from_overworld`.
+
+**Night.** Any scene (towns and plain scenes) has a night version made from its day art: the `bg_sky_night`
+sky (moon once per loop, stars, milky way), a moonlit grade on layers, tiles and props (signs keep their
+contrast, just dimmer), glass panes turned into warm lit windows (seeded, some stay dark), lamps, bulbs and
+lanterns kept bright, one warm glow layer in front (a semi-transparent prop, so no blend modes are needed),
+and characters tinted to match.
+
+```bash
+npx tsx src/cli.ts render --id town_bunga --night --scale 2 --out bunga_night.png
+npx tsx src/cli.ts export --id town_bunga --preset all --night      # also writes the night twin
+npx tsx src/cli.ts towns --from-overworld ../easytilemap/maps/world.json --export godot,pixi --night --out ./town-exports
+```
+
+`--night` on `export` / `compose --export` / `town` / `towns` adds `<base>_night.tscn` (+ `_night_tileset.tres`),
+`<base>_night.pixi.json` or `<base>_night_preview.png` / `_night_parallax.png` next to the day files, with
+the night art under `night/`. Day files are unchanged, except that the day `<base>.pixi.json` gains a
+`"night": "<base>_night.pixi.json"` link (the night one has `"lighting": "night"` and `"day"`). Without
+`--night` nothing changes at all. The Easy Tilemap overworld picks the night street up on its own: entering a
+town at night shows it, and N swaps day / night inside the town. MCP: `night: true` on `render_preview`,
+`export_scene`, `compose_town` and `towns_from_overworld`.
+
 `compose` (alias `new`) also takes `--tiles-file rows.txt` for hand-drawn grids or `--input scene.json` for a full recipe. Folders you pass to `--out` / `--scenes-dir` are allowed for that run.
 
 ---

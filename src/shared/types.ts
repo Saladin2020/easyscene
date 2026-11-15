@@ -160,8 +160,31 @@ export interface SceneDoc {
   character?: { sheet: string; x?: number };
   /** Easy Sprite characters placed in the scene (optional, additive to easyscene/1). */
   characters?: SceneCharacter[];
+  /** Ways out of the scene (optional, additive to easyscene/1): e.g. both street ends back to an overworld map. */
+  exits?: SceneExit[];
+  /** Set on scenes made for an overworld town (Easy Tilemap `overworld.towns[]`). */
+  town?: SceneTown;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface SceneExit {
+  /** Map edge the exit sits on. */
+  side: "left" | "right";
+  /** Target: an overworld map id (or "overworld") or another scene id. */
+  to: string;
+  /** Where to arrive in the target, e.g. the overworld town id. */
+  at?: string;
+}
+export const EXIT_SIDES = ["left", "right"] as const;
+
+export interface SceneTown {
+  kind: string;
+  /** Overworld town id. */
+  id?: string;
+  /** Overworld map id. */
+  map?: string;
+  name?: { th: string; en: string; ms?: string };
 }
 
 export type CharacterFacing = "right" | "left" | "front";

@@ -9,6 +9,7 @@ import { isHex } from "./raster.js";
 import { buildTiles, normalizeTiles, surfaceY, type TerrainSpec } from "./tiles.js";
 import {
   DEFAULT_CONFIG,
+  EXIT_SIDES,
   type BackgroundPart,
   type CollisionRect,
   type EasySceneConfig,
@@ -16,6 +17,8 @@ import {
   type PropLayer,
   type SceneCharacter,
   type SceneDoc,
+  type SceneExit,
+  type SceneTown,
   type SceneLayer,
   type SceneProp,
 } from "./types.js";
@@ -75,6 +78,8 @@ export interface ComposeSceneInput {
   /** Legacy single preview character. */
   character?: { sheet: string; x?: number };
   characters?: SceneCharacter[];
+  exits?: SceneExit[];
+  town?: SceneTown;
 }
 
 /**
@@ -302,6 +307,21 @@ export function composeScene(
       if (typeof c.x === "number" && (c.x + 48 < 0 || c.x > mapW)) warnings.push(`Character "${c.name ?? c.sheet}" at x=${c.x} is outside the map`);
     }
   }
+  if (input.exits !== undefined) {
+    const exits: SceneExit[] = [];
+    for (const e of Array.isArray(input.exits) ? input.exits : []) {
+      if (!e || !(EXIT_SIDES as readonly string[]).includes(e.side) || typeof e.to !== "string" || !e.to.trim()) {
+        warnings.push(`Skipped exit ${JSON.stringify(e)}: needs side "left"|"right" and a "to" target`);
+        continue;
+      }
+      exits.push({ side: e.side, to: e.to.trim(), ...(typeof e.at === "string" && e.at.trim() ? { at: e.at.trim() } : {}) });
+    }
+    if (exits.length) scene.exits = exits;
+  }
+  if (input.town && typeof input.town.kind === "string") {
+    const t = input.town;
+    scene.town = { kind: t.kind, ...(t.id ? { id: t.id } : {}), ...(t.map ? { map: t.map } : {}), ...(t.name?.th && t.name?.en ? { name: { th: t.name.th, en: t.name.en, ...(t.name.ms ? { ms: t.name.ms } : {}) } } : {}) };
+  }
   return { scene, warnings };
 }
 
@@ -323,6 +343,8 @@ export function normalizeScene(parts: readonly PartMeta[], doc: SceneDoc, config
       collision: doc.collision,
       character: doc.character,
       characters: doc.characters,
+      exits: doc.exits,
+      town: doc.town,
     },
     config,
   );

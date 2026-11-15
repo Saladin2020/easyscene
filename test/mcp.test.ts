@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { access } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MCP_TOOL_NAMES, createEasySceneMcp } from "../src/mcp/server.js";
 import { tempWorkspace } from "./helpers.js";
@@ -130,4 +130,43 @@ describe("MCP server", () => {
     expect(exported.warnings).toEqual([]);
     expect(exported.paths.some((p: string) => p.endsWith("mcp_walker.png"))).toBe(true);
   });
+
+  it("compose_town and towns_from_overworld build exported town streets", async () => {
+    const one = body(await client.callTool({ name: "compose_town", arguments: { id: "mcp_kampung", kind: "malay_kampung", seed: 3, town: "kampung_x", map: "world", export: "pixi" } }));
+    expect(one.towns[0].scene).toBe("mcp_kampung");
+    expect(one.towns[0].exports[0].preset).toBe("pixi");
+    const pixi = JSON.parse(await readFile(`${one.towns[0].exports[0].dir}/mcp_kampung.pixi.json`, "utf8"));
+    expect(pixi.exits.length).toBeGreaterThan(0);
+    expect(pixi.town.kind).toBe("malay_kampung");
+    const bad = await client.callTool({ name: "compose_town", arguments: { id: "x", kind: "castle" } });
+    expect((bad as { isError?: boolean }).isError).toBe(true);
+    const map = {
+      id: "world",
+      overworld: {
+        towns: [
+          { id: "ban_a", kind: "thai_town", scene: "town_ban_a", seed: 1, name: { th: "บ้านเอ", en: "Ban A" } },
+          { id: "kg_b", kind: "malay_kampung", scene: "town_kg_b", seed: 2, name: { th: "กำปงบี", en: "Kampung B", ms: "Kampung B" } },
+        ],
+      },
+    };
+    await writeFile(`${root}/world.json`, JSON.stringify(map));
+    const many = body(await client.callTool({ name: "towns_from_overworld", arguments: { map: "world.json", export: "godot,pixi" } }));
+    expect(many.towns.map((t: { scene: string }) => t.scene)).toEqual(["town_ban_a", "town_kg_b"]);
+    for (const t of many.towns) {
+      expect(t.exports.map((e: { preset: string }) => e.preset)).toEqual(["godot", "pixi"]);
+      await access(`${t.exports[0].dir}/${t.scene}.scene.json`);
+    }
+    // night: render_preview night=true and a compose_town export with its night twin
+    const nightPrev = await client.callTool({ name: "render_preview", arguments: { id: "mcp_kampung", night: true } });
+    const np = JSON.parse((nightPrev as { content: Array<{ text: string }> }).content[0]!.text);
+    expect(np.path.endsWith("mcp_kampung_level_night.png")).toBe(true);
+    const nightTown = body(await client.callTool({ name: "compose_town", arguments: { id: "mcp_kampung_n", kind: "malay_kampung", seed: 3, export: "pixi", night: true } }));
+    const nd = nightTown.towns[0].exports[0].dir;
+    expect(JSON.parse(await readFile(`${nd}/mcp_kampung_n.pixi.json`, "utf8")).night).toBe("mcp_kampung_n_night.pixi.json");
+    expect(JSON.parse(await readFile(`${nd}/mcp_kampung_n_night.pixi.json`, "utf8")).lighting).toBe("night");
+    const nightExport = body(await client.callTool({ name: "export_scene", arguments: { id: "mcp_kampung", preset: "godot", night: true } }));
+    expect(nightExport.paths.some((p: string) => p.endsWith("mcp_kampung_night.tscn"))).toBe(true);
+    const outside = await client.callTool({ name: "towns_from_overworld", arguments: { map: "/etc/passwd" } });
+    expect((outside as { isError?: boolean }).isError).toBe(true);
+  }, 120_000);
 });

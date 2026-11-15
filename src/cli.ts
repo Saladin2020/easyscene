@@ -12,12 +12,15 @@ import { renderParallaxStrip, renderScene } from "./shared/render.js";
 import type { ComposeLayerInput, ComposePropInput, ComposeSceneInput } from "./shared/scene.js";
 import type { TerrainSpec } from "./shared/tiles.js";
 import { propCategory, type ExportPresetId } from "./shared/types.js";
-import { composeAndSave, loadAssets, resolveCharacters } from "./lib/compose.js";
+import { composeAndSave, loadAssets, loadRenderScene, resolveCharacters } from "./lib/compose.js";
+import { nightSprite } from "./shared/night.js";
 import { parseCharacterArg, sceneCharacters } from "./shared/characters.js";
 import type { SceneCharacter } from "./shared/types.js";
 import type { StreetSetId } from "./shared/streetGen.js";
 import { exportScene, type ExportResult } from "./lib/export.js";
 import { writePng } from "./lib/png.js";
+import { TOWN_KINDS, isTownKind, townSpecsFromOverworld, type TownSceneSpec } from "./shared/townGen.js";
+import { composeTowns, type ComposedTown } from "./lib/towns.js";
 import { getWorkspaceSummary, initWorkspace, loadParts, loadScene, loadScenes, resolveWorkspace, summarizeScene } from "./lib/workspace.js";
 
 const program = new Command();
@@ -195,6 +198,7 @@ program
   .option("--export <presets>", "Also export: png,godot,pixi or all")
   .option("--out <dir>", "Export parent folder (default exports/)")
   .option("--godot-parallax <mode>", "parallax2d (default) | legacy")
+  .option("--night", "Also export the night version (<base>_night.*, art under night/)")
   .option("--workspace <path>", "Workspace directory")
   .option("--json", "JSON output")
   .action(async (opts) => {
@@ -256,6 +260,7 @@ program
             dir: opts.out,
             trustedCharacter: true,
             godot: { parallax: opts.godotParallax },
+            ...(opts.night ? { night: true } : {}),
           }),
         );
       }
@@ -271,6 +276,68 @@ program
     });
   });
 
+function printTowns(json: boolean | undefined, done: ComposedTown[], warnings: string[] = []) {
+  print(json, { towns: done, warnings }, () => {
+    for (const w of warnings) console.log(`warn: ${w}`);
+    for (const d of done) {
+      console.log(`Town ${d.scene} (${d.kind}) → ${d.path} · ${d.width} tiles wide`);
+      for (const w of d.warnings) console.log(`  warn: ${w}`);
+      for (const e of d.exports) console.log(`  export ${e.preset} → ${e.dir}`);
+    }
+  });
+}
+
+program
+  .command("town")
+  .description(`Compose a side-view town scene: ${TOWN_KINDS.join(" | ")}`)
+  .requiredOption("--id <id>", "Scene id [a-z0-9_-]+")
+  .requiredOption("--kind <kind>", TOWN_KINDS.join(" | "))
+  .option("--seed <n>", "Seed (same seed → same street)", "1")
+  .option("--name-th <name>", "Thai name")
+  .option("--name-en <name>", "English name")
+  .option("--name-ms <name>", "Malay name")
+  .option("--town <id>", "Overworld town id (for the exits back)")
+  .option("--map <id>", "Overworld map id (for the exits back)")
+  .option("--scenes-dir <dir>", "Where to write the scene JSON (default scenes/)")
+  .option("--export <presets>", "Also export: png,godot,pixi or all")
+  .option("--out <dir>", "Export parent folder (default exports/)")
+  .option("--godot-parallax <mode>", "parallax2d (default) | legacy")
+  .option("--night", "Also export the night version (<base>_night.*, art under night/)")
+  .option("--workspace <path>", "Workspace directory")
+  .option("--json", "JSON output")
+  .action(async (opts) => {
+    if (!isTownKind(opts.kind)) { console.error(`--kind must be one of ${TOWN_KINDS.join(", ")}`); process.exit(2); }
+    const root = defaultWorkspace(opts.workspace);
+    await initWorkspace(root);
+    allowForThisRun(opts.scenesDir);
+    allowForThisRun(opts.out);
+    const spec: TownSceneSpec = { id: opts.id, kind: opts.kind, seed: Number(opts.seed) || 0, ...(opts.town ? { town: opts.town } : {}), ...(opts.map ? { map: opts.map } : {}) };
+    if (opts.nameTh && opts.nameEn) spec.name = { th: opts.nameTh, en: opts.nameEn, ...(opts.nameMs ? { ms: opts.nameMs } : {}) };
+    printTowns(opts.json, await composeTowns(root, [spec], opts));
+  });
+
+program
+  .command("towns")
+  .description("Compose one side-view town scene per town of an Easy Tilemap overworld map")
+  .requiredOption("--from-overworld <map.json>", "Easy Tilemap map JSON with an overworld block")
+  .option("--scenes-dir <dir>", "Where to write the scene JSON (default scenes/)")
+  .option("--export <presets>", "Also export: png,godot,pixi or all")
+  .option("--out <dir>", "Export parent folder (default exports/)")
+  .option("--godot-parallax <mode>", "parallax2d (default) | legacy")
+  .option("--night", "Also export the night version (<base>_night.*, art under night/)")
+  .option("--workspace <path>", "Workspace directory")
+  .option("--json", "JSON output")
+  .action(async (opts) => {
+    const root = defaultWorkspace(opts.workspace);
+    await initWorkspace(root);
+    allowForThisRun(opts.scenesDir);
+    allowForThisRun(opts.out);
+    const map = JSON.parse(await readFile(path.resolve(opts.fromOverworld), "utf8"));
+    const { specs, warnings } = townSpecsFromOverworld(map);
+    printTowns(opts.json, await composeTowns(root, specs, opts), warnings);
+    if (!specs.length) process.exitCode = 1;
+  });
+
 program
   .command("export")
   .description("Export a saved scene")
@@ -280,6 +347,7 @@ program
   .option("--base-name <name>", "Folder/file stem (default scene id)")
   .option("--character <spec>", "Replace the scene's characters: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
   .option("--godot-parallax <mode>", "parallax2d (default) | legacy")
+  .option("--night", "Also export the night version (<base>_night.*, art under night/)")
   .option("--scenes-dir <dir>", "Scene folder (default scenes/)")
   .option("--workspace <path>", "Workspace directory")
   .option("--json", "JSON output")
@@ -300,6 +368,7 @@ program
           characters: characterArgs(opts.character),
           trustedCharacter: true,
           godot: { parallax: opts.godotParallax },
+          ...(opts.night ? { night: true } : {}),
         }),
       );
     }
@@ -321,16 +390,16 @@ program
   .option("--camera <x>", "Camera x for viewport/level mode", "0")
   .option("--character <spec>", "Replace the scene's characters: path[:x[:facing[:anim[:frame]]]] (repeatable)", collect)
   .option("--scale <n>", "Integer nearest-neighbour upscale (e.g. 3)", "1")
+  .option("--night", "Night version: night sky, moonlit art, lit windows / lamps with glow, tinted characters")
   .option("--workspace <path>", "Workspace directory")
   .action(async (opts) => {
     const root = defaultWorkspace(opts.workspace);
-    const doc = await loadScene(root, opts.id);
-    const assets = await loadAssets(root, doc);
+    const { doc, assets } = await loadRenderScene(root, await loadScene(root, opts.id), !!opts.night);
     const camX = Number(opts.camera);
     const list = characterArgs(opts.character) ?? sceneCharacters(doc);
     const resolved = await resolveCharacters(root, list, { trusted: true });
     for (const w of resolved.warnings) console.error(`warn: ${w}`);
-    const characters = resolved.characters.map((c) => c.sprite);
+    const characters = resolved.characters.map((c) => (opts.night ? nightSprite(c.sprite) : c.sprite));
     const legacy = !doc.characters?.length && !opts.character && characters.length === 1;
     const viewportY = Math.max(0, doc.height * doc.tileSize - doc.viewport.height);
     let img =

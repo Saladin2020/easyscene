@@ -12,6 +12,7 @@ import { facingRow, sceneCharacters, walkColumns } from "../shared/characters.js
 import type { SceneCharacter } from "../shared/types.js";
 import { loadAssets, resolveCharacters, type ResolvedCharacter } from "./compose.js";
 import { encodePng } from "./png.js";
+import { NIGHT_SKY_PART, nightScene, nightSheet, nightSprite } from "../shared/night.js";
 import { assertSafeId, loadScene, resolveOutDir } from "./workspace.js";
 
 export interface ExportOptions {
@@ -29,6 +30,11 @@ export interface ExportOptions {
   /** CLI only: allow reading the character sheet from any path. */
   trustedCharacter?: boolean;
   godot?: { parallax?: "parallax2d" | "legacy" };
+  /**
+   * Also write the night version next to the day files: `<base>_night.tscn` / `<base>_night.pixi.json` /
+   * `<base>_night_preview.png`, its art under `night/`. The day files only change for pixi (a `night` link).
+   */
+  night?: boolean;
 }
 
 export interface ExportResult {
@@ -497,198 +503,221 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
   const doc = opts.scene ?? (await loadScene(root, assertSafeId(opts.sceneId), opts.scenesDir));
   assertSafeId(doc.id);
   const base = opts.baseName ? assertSafeId(opts.baseName, "base name") : doc.id;
+  const dayBase = base;
   const parent = resolveOutDir(root, opts.dir, "exports");
   const outDir = path.join(parent, `${base}-${preset}`);
   const files = new Files(outDir);
   const warnings: string[] = [];
-  const assets = await loadAssets(root, doc);
+  const dayDoc = doc;
+  await exportPass(false);
+  if (opts.night) await exportPass(true);
 
-  for (const id of [doc.tileset, ...doc.layers.map((l) => l.part), ...doc.props.map((p) => p.part)]) {
-    if (!assets.image(id)) warnings.push(`Missing part image: ${id}`);
-  }
-
-  const override = opts.characters?.length ? opts.characters : opts.character ? [{ sheet: opts.character }] : undefined;
-  const list = override ?? sceneCharacters(doc);
-  const resolved = await resolveCharacters(root, list, { trusted: opts.trustedCharacter });
-  warnings.push(...resolved.warnings);
-  const chars = resolved.characters;
-  const sprites: CharacterSprite[] = chars.map((c) => c.sprite);
-  // one legacy preview character keeps walking along with the strip camera; a cast stays where it was placed
-  const legacyOnly = !doc.characters?.length && !opts.characters?.length && sprites.length === 1;
-  const outDoc: SceneDoc = override ? { ...doc, character: undefined, characters: override as SceneCharacter[] } : doc;
-
-  const tilesetMeta = assets.meta(doc.tileset) as TilesetPart | undefined;
-  const preview = renderScene(doc, assets, { characters: sprites });
-  const strip = renderParallaxStrip(doc, assets, 3, legacyOnly ? sprites[0] : sprites);
-
-  if (preset === "png") {
-    for (let i = 0; i < doc.layers.length; i++) {
-      const img = layerImage(doc, assets, i);
-      const meta = assets.meta(doc.layers[i]!.part) as BackgroundPart | undefined;
-      if (img) await files.png(`layer_${i}_${meta?.band ?? "bg"}_${doc.layers[i]!.part}.png`, img);
+  async function exportPass(night: boolean): Promise<void> {
+    const pre = night ? "night/" : "";
+    const base = night ? `${dayBase}_night` : dayBase;
+    const { doc, assets } = night
+      ? nightScene(dayDoc, await loadAssets(root, dayDoc, undefined, [NIGHT_SKY_PART]))
+      : { doc: dayDoc, assets: await loadAssets(root, dayDoc) };
+    for (const id of night ? [] : [doc.tileset, ...doc.layers.map((l) => l.part), ...doc.props.map((p) => p.part)]) {
+      if (!assets.image(id)) warnings.push(`Missing part image: ${id}`);
     }
-    await files.png("tilemap.png", renderTilemap(doc, assets));
-    await files.png("props_back.png", renderProps(doc, assets, "back"));
-    await files.png("props_front.png", renderProps(doc, assets, "front"));
-    await files.png(`${base}_preview.png`, preview);
-    await files.png(`${base}_parallax.png`, strip);
-    await files.text(`${base}.scene.json`, `${JSON.stringify(outDoc, null, 2)}\n`);
-  }
 
-  if (preset === "godot") {
-    const layerFiles: GodotFiles["layers"] = [];
-    for (let i = 0; i < doc.layers.length; i++) {
-      const img = layerImage(doc, assets, i) ?? { width: 1, height: 1, data: new Uint8Array(4) };
-      const rel = `assets/bg_${i}_${doc.layers[i]!.part}.png`;
-      await files.png(rel, img);
-      layerFiles.push({ res: `res://${rel}`, width: img.width, height: img.height });
-    }
-    const propFiles: string[] = [];
-    const written = new Set<string>();
-    for (let i = 0; i < doc.props.length; i++) {
-      const rel = `assets/props/${propVariantKey(doc.props[i]!)}.png`;
-      if (!written.has(rel)) {
-        const img = propImage(doc, assets, i);
-        if (img) await files.png(rel, img);
-        written.add(rel);
+    const override = opts.characters?.length ? opts.characters : opts.character ? [{ sheet: opts.character }] : undefined;
+    const list = override ?? sceneCharacters(doc);
+    const resolved = await resolveCharacters(root, list, { trusted: opts.trustedCharacter });
+    warnings.push(...resolved.warnings);
+    // night: tinted sheets baked into the night assets (same rows / columns)
+    const chars: ResolvedCharacter[] = night
+      ? resolved.characters.map((c) => ({ ...c, image: nightSheet(c.image), sprite: nightSprite(c.sprite) }))
+      : resolved.characters;
+    const sprites: CharacterSprite[] = chars.map((c) => c.sprite);
+    // one legacy preview character keeps walking along with the strip camera; a cast stays where it was placed
+    const legacyOnly = !doc.characters?.length && !opts.characters?.length && sprites.length === 1;
+    const outDoc: SceneDoc = override ? { ...dayDoc, character: undefined, characters: override as SceneCharacter[] } : doc;
+
+    const tilesetMeta = assets.meta(doc.tileset) as TilesetPart | undefined;
+    const preview = renderScene(doc, assets, { characters: sprites });
+    const strip = renderParallaxStrip(doc, assets, 3, legacyOnly ? sprites[0] : sprites);
+
+    if (preset === "png") {
+      for (let i = 0; i < doc.layers.length; i++) {
+        const img = layerImage(doc, assets, i);
+        const meta = assets.meta(doc.layers[i]!.part) as BackgroundPart | undefined;
+        if (img) await files.png(`${pre}layer_${i}_${meta?.band ?? "bg"}_${doc.layers[i]!.part}.png`, img);
       }
-      propFiles.push(`res://${rel}`);
+      await files.png(`${pre}tilemap.png`, renderTilemap(doc, assets));
+      await files.png(`${pre}props_back.png`, renderProps(doc, assets, "back"));
+      await files.png(`${pre}props_front.png`, renderProps(doc, assets, "front"));
+      await files.png(`${base}_preview.png`, preview);
+      await files.png(`${base}_parallax.png`, strip);
+      if (!night) await files.text(`${base}.scene.json`, `${JSON.stringify(outDoc, null, 2)}\n`);
     }
-    const atlas = assets.image(doc.tileset);
-    if (atlas) await files.png("assets/tileset.png", atlas);
-    const tsRes = `res://${base}_tileset.tres`;
-    if (tilesetMeta) await files.text(`${base}_tileset.tres`, buildTileSetTres(tilesetMeta, "res://assets/tileset.png"));
-    await files.text("camera_pan.gd", CAMERA_PAN_GD);
-    const charFiles: NonNullable<GodotFiles["characters"]> = [];
-    const sheetRel = new Map<string, string>();
-    for (const ch of chars) {
-      let rel = sheetRel.get(ch.file);
-      if (!rel) {
-        rel = `assets/characters/${ch.label}.png`;
-        await files.png(rel, ch.image);
-        sheetRel.set(ch.file, rel);
-      }
-      charFiles.push({ ch, res: `res://${rel}` });
-    }
-    const hasPatrol = chars.some((c) => c.spec.patrol);
-    if (hasPatrol) await files.text("character_patrol.gd", PATROL_GD);
-    const tscn = buildGodotScene(
-      doc,
-      assets,
-      {
-        layers: layerFiles,
-        props: propFiles,
-        tileset: tsRes,
-        cameraScript: "res://camera_pan.gd",
-        characters: charFiles,
-        ...(hasPatrol ? { patrolScript: "res://character_patrol.gd" } : {}),
-      },
-      opts.godot,
-    );
-    await files.text(`${base}.tscn`, tscn);
-    await files.text("project.godot", godotProject(doc, `res://${base}.tscn`, layerImage(doc, assets, 0)));
-    await files.png(`${base}_preview.png`, preview);
-    await files.text(
-      "README.txt",
-      `Easy Scene export — ${doc.name}\n\nOpen this folder as a Godot 4.3+ project (project.godot) or copy it into your project.\nMain scene: ${base}.tscn (Parallax2D layers, TileMapLayer with ${base}_tileset.tres, props, Camera2D${chars.length ? `, ${chars.length} AnimatedSprite2D characters with idle_<dir> / walk_<dir> SpriteFrames` : ""}).\nPress F5, then the arrow keys to pan the preview camera (camera_pan.gd).\nIf you copy it into another project, keep the folder at res:// root or search/replace "res://" paths.\nTiles collide on physics layer 1; '=' platforms are one-way.\nTextures use Nearest filtering (project setting). Generated by Easy Scene; sample art is CC0.\n`,
-    );
-  }
 
-  if (preset === "pixi") {
-    const layers = [];
-    for (let i = 0; i < doc.layers.length; i++) {
-      const layer = doc.layers[i]!;
-      const img = layerImage(doc, assets, i);
-      const meta = assets.meta(layer.part) as BackgroundPart | undefined;
-      if (!img) continue;
-      const rel = `layers/${i}_${layer.part}.png`;
-      await files.png(rel, img);
-      layers.push({
-        name: `${meta?.band ?? "layer"}_${layer.part}`,
-        part: layer.part,
-        band: meta?.band,
-        image: rel,
-        width: img.width,
-        height: img.height,
-        y: layerWorldY(doc, img, i),
-        scrollFactor: { x: layer.scroll, y: layer.scrollY ?? 1 },
-        loopWidth: meta?.loopWidth ?? img.width,
-        repeatX: true,
-      });
-    }
-    const atlas = assets.image(doc.tileset);
-    if (atlas) await files.png("tileset.png", atlas);
-    const data: number[] = [];
-    for (let y = 0; y < doc.height; y++) for (let x = 0; x < doc.width; x++) {
-      const t = resolveTile(doc.tiles, x, y);
-      data.push(t ? atlasIndex(t) : -1);
-    }
-    const props = [];
-    const written = new Set<string>();
-    for (let i = 0; i < doc.props.length; i++) {
-      const p = doc.props[i]!;
-      const img = propImage(doc, assets, i);
-      if (!img) continue;
-      const rel = `props/${propVariantKey(p)}.png`;
-      if (!written.has(rel)) {
+    if (preset === "godot") {
+      const layerFiles: GodotFiles["layers"] = [];
+      for (let i = 0; i < doc.layers.length; i++) {
+        const img = layerImage(doc, assets, i) ?? { width: 1, height: 1, data: new Uint8Array(4) };
+        const rel = `${pre}assets/bg_${i}_${doc.layers[i]!.part}.png`;
         await files.png(rel, img);
-        written.add(rel);
+        layerFiles.push({ res: `res://${rel}`, width: img.width, height: img.height });
       }
-      props.push({ part: p.part, image: rel, x: p.x, y: p.y - img.height, width: img.width, height: img.height, flipX: Boolean(p.flipX), layer: propLayerOf(doc, assets, i) });
+      const propFiles: string[] = [];
+      const written = new Set<string>();
+      for (let i = 0; i < doc.props.length; i++) {
+        const rel = `${pre}assets/props/${propVariantKey(doc.props[i]!)}.png`;
+        if (!written.has(rel)) {
+          const img = propImage(doc, assets, i);
+          if (img) await files.png(rel, img);
+          written.add(rel);
+        }
+        propFiles.push(`res://${rel}`);
+      }
+      const atlas = assets.image(doc.tileset);
+      if (atlas) await files.png(`${pre}assets/tileset.png`, atlas);
+      const tsRes = `res://${base}_tileset.tres`;
+      if (tilesetMeta) await files.text(`${base}_tileset.tres`, buildTileSetTres(tilesetMeta, `res://${pre}assets/tileset.png`));
+      if (!night) await files.text("camera_pan.gd", CAMERA_PAN_GD);
+      const charFiles: NonNullable<GodotFiles["characters"]> = [];
+      const sheetRel = new Map<string, string>();
+      for (const ch of chars) {
+        let rel = sheetRel.get(ch.file);
+        if (!rel) {
+          rel = `${pre}assets/characters/${ch.label}.png`;
+          await files.png(rel, ch.image);
+          sheetRel.set(ch.file, rel);
+        }
+        charFiles.push({ ch, res: `res://${rel}` });
+      }
+      const hasPatrol = chars.some((c) => c.spec.patrol);
+      if (hasPatrol && !night) await files.text("character_patrol.gd", PATROL_GD);
+      const tscn = buildGodotScene(
+        doc,
+        assets,
+        {
+          layers: layerFiles,
+          props: propFiles,
+          tileset: tsRes,
+          cameraScript: "res://camera_pan.gd",
+          characters: charFiles,
+          ...(hasPatrol ? { patrolScript: "res://character_patrol.gd" } : {}),
+        },
+        opts.godot,
+      );
+      await files.text(`${base}.tscn`, tscn);
+      if (!night) await files.text("project.godot", godotProject(doc, `res://${base}.tscn`, layerImage(doc, assets, 0)));
+      await files.png(`${base}_preview.png`, preview);
+      // Scene data next to the .tscn so runtimes (e.g. the Easy Tilemap overworld) can read tiles + exits.
+      // Only for scenes with exits / town data, so older scenes export exactly as before.
+      if (!night && (doc.exits?.length || doc.town)) await files.text(`${base}.scene.json`, `${JSON.stringify(outDoc, null, 2)}\n`);
+      if (!night) await files.text(
+        "README.txt",
+        `Easy Scene export — ${doc.name}\n\nOpen this folder as a Godot 4.3+ project (project.godot) or copy it into your project.\nMain scene: ${base}.tscn (Parallax2D layers, TileMapLayer with ${base}_tileset.tres, props, Camera2D${chars.length ? `, ${chars.length} AnimatedSprite2D characters with idle_<dir> / walk_<dir> SpriteFrames` : ""}).\nPress F5, then the arrow keys to pan the preview camera (camera_pan.gd).\nIf you copy it into another project, keep the folder at res:// root or search/replace "res://" paths.\nTiles collide on physics layer 1; '=' platforms are one-way.\nTextures use Nearest filtering (project setting). Generated by Easy Scene; sample art is CC0.\n`,
+      );
     }
-    const characters = [];
-    const sheetRel = new Map<string, string>();
-    for (const ch of chars) {
-      let rel = sheetRel.get(ch.file);
-      if (!rel) {
-        rel = `characters/${ch.label}.png`;
-        await files.png(rel, ch.image);
-        sheetRel.set(ch.file, rel);
+
+    if (preset === "pixi") {
+      const layers = [];
+      for (let i = 0; i < doc.layers.length; i++) {
+        const layer = doc.layers[i]!;
+        const img = layerImage(doc, assets, i);
+        const meta = assets.meta(layer.part) as BackgroundPart | undefined;
+        if (!img) continue;
+        const rel = `${pre}layers/${i}_${layer.part}.png`;
+        await files.png(rel, img);
+        layers.push({
+          name: `${meta?.band ?? "layer"}_${layer.part}`,
+          part: layer.part,
+          band: meta?.band,
+          image: rel,
+          width: img.width,
+          height: img.height,
+          y: layerWorldY(doc, img, i),
+          scrollFactor: { x: layer.scroll, y: layer.scrollY ?? 1 },
+          loopWidth: meta?.loopWidth ?? img.width,
+          repeatX: true,
+        });
       }
-      const rows: Record<string, { row: number; flipX: boolean }> = {};
-      for (const f of ["right", "left", "front"] as const) {
-        if (f === "front" && !ch.layout.directions.includes("front")) continue;
-        rows[f] = facingRow(ch.layout, f);
+      const atlas = assets.image(doc.tileset);
+      if (atlas) await files.png(`${pre}tileset.png`, atlas);
+      const data: number[] = [];
+      for (let y = 0; y < doc.height; y++) for (let x = 0; x < doc.width; x++) {
+        const t = resolveTile(doc.tiles, x, y);
+        data.push(t ? atlasIndex(t) : -1);
       }
-      const s = ch.sprite;
-      characters.push({
-        name: ch.label,
-        image: rel,
-        frameSize: ch.layout.frameSize,
-        groundRow: ch.groundRow,
-        x: s.x,
-        y: characterTop(doc, s),
-        ...(typeof ch.spec.y === "number" ? { baselineY: ch.spec.y } : {}),
-        facing: ch.spec.facing ?? "right",
-        anim: ch.spec.anim ?? "idle",
-        layer: ch.spec.layer ?? "main",
-        rows,
-        animations: { idle: [idleColumn(ch)], walk: walkColumns(ch.layout) },
-        fps: 6,
-        ...(ch.spec.patrol ? { patrol: { speed: 24, ...ch.spec.patrol } } : {}),
-      });
+      const props = [];
+      const written = new Set<string>();
+      for (let i = 0; i < doc.props.length; i++) {
+        const p = doc.props[i]!;
+        const img = propImage(doc, assets, i);
+        if (!img) continue;
+        const rel = `${pre}props/${propVariantKey(p)}.png`;
+        if (!written.has(rel)) {
+          await files.png(rel, img);
+          written.add(rel);
+        }
+        props.push({ part: p.part, image: rel, x: p.x, y: p.y - img.height, width: img.width, height: img.height, flipX: Boolean(p.flipX), layer: propLayerOf(doc, assets, i) });
+      }
+      const characters = [];
+      const sheetRel = new Map<string, string>();
+      for (const ch of chars) {
+        let rel = sheetRel.get(ch.file);
+        if (!rel) {
+          rel = `${pre}characters/${ch.label}.png`;
+          await files.png(rel, ch.image);
+          sheetRel.set(ch.file, rel);
+        }
+        const rows: Record<string, { row: number; flipX: boolean }> = {};
+        for (const f of ["right", "left", "front"] as const) {
+          if (f === "front" && !ch.layout.directions.includes("front")) continue;
+          rows[f] = facingRow(ch.layout, f);
+        }
+        const s = ch.sprite;
+        characters.push({
+          name: ch.label,
+          image: rel,
+          frameSize: ch.layout.frameSize,
+          groundRow: ch.groundRow,
+          x: s.x,
+          y: characterTop(doc, s),
+          ...(typeof ch.spec.y === "number" ? { baselineY: ch.spec.y } : {}),
+          facing: ch.spec.facing ?? "right",
+          anim: ch.spec.anim ?? "idle",
+          layer: ch.spec.layer ?? "main",
+          rows,
+          animations: { idle: [idleColumn(ch)], walk: walkColumns(ch.layout) },
+          fps: 6,
+          ...(ch.spec.patrol ? { patrol: { speed: 24, ...ch.spec.patrol } } : {}),
+        });
+      }
+      const { width: pw, height: ph } = mapSize(doc);
+      const col = collisionSummary(doc, assets);
+      const json = {
+        format: "easyscene-pixi/1",
+        id: doc.id,
+        name: doc.name,
+        scaleMode: "nearest",
+        tileSize: doc.tileSize,
+        size: { tilesX: doc.width, tilesY: doc.height, width: pw, height: ph },
+        viewport: doc.viewport,
+        renderOrder: ["layers", "props.back", "tilemap", "characters", "props.front"],
+        layers,
+        tileset: { image: `${pre}tileset.png`, tileSize: tilesetMeta?.tileSize ?? doc.tileSize, columns: tilesetMeta?.columns ?? ATLAS_COLUMNS, rows: tilesetMeta?.rows },
+        tilemap: { width: doc.width, height: doc.height, data, codes: doc.tiles },
+        props,
+        characters,
+        collision: { solid: col.solid, oneWay: col.oneWay, slopes: col.slopes },
+        // optional, only on scenes that have them (old scenes export byte-for-byte as before)
+        ...(doc.exits?.length ? { exits: doc.exits } : {}),
+        ...(doc.town ? { town: doc.town } : {}),
+        // only with --night: the day file links its night twin, the night file says what it is
+        ...(opts.night && !night ? { night: `${dayBase}_night.pixi.json` } : {}),
+        ...(night ? { lighting: "night", day: `${dayBase}.pixi.json` } : {}),
+      };
+      await files.text(`${base}.pixi.json`, `${JSON.stringify(json, null, 2)}\n`);
+      if (!night) await files.text("load-scene.js", PIXI_LOADER);
+      await files.png(`${base}_preview.png`, preview);
     }
-    const { width: pw, height: ph } = mapSize(doc);
-    const col = collisionSummary(doc, assets);
-    const json = {
-      format: "easyscene-pixi/1",
-      id: doc.id,
-      name: doc.name,
-      scaleMode: "nearest",
-      tileSize: doc.tileSize,
-      size: { tilesX: doc.width, tilesY: doc.height, width: pw, height: ph },
-      viewport: doc.viewport,
-      renderOrder: ["layers", "props.back", "tilemap", "characters", "props.front"],
-      layers,
-      tileset: { image: "tileset.png", tileSize: tilesetMeta?.tileSize ?? doc.tileSize, columns: tilesetMeta?.columns ?? ATLAS_COLUMNS, rows: tilesetMeta?.rows },
-      tilemap: { width: doc.width, height: doc.height, data, codes: doc.tiles },
-      props,
-      characters,
-      collision: { solid: col.solid, oneWay: col.oneWay, slopes: col.slopes },
-    };
-    await files.text(`${base}.pixi.json`, `${JSON.stringify(json, null, 2)}\n`);
-    await files.text("load-scene.js", PIXI_LOADER);
-    await files.png(`${base}_preview.png`, preview);
+
   }
 
   return { preset, dir: outDir, paths: files.paths, warnings };

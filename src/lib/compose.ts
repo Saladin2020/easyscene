@@ -16,6 +16,7 @@ import { DEFAULT_GROUND_ROW, type CharacterSprite, type SceneAssets } from "../s
 import { composeScene, normalizeScene, type ComposeSceneInput } from "../shared/scene.js";
 import { DEFAULT_CONFIG, type PartMeta, type SceneCharacter, type SceneDoc } from "../shared/types.js";
 import { decodePng, isPng } from "./png.js";
+import { NIGHT_SKY_PART, nightScene } from "../shared/night.js";
 import { assertSafeId, isAllowedPath, loadConfig, loadParts, partImagePath, resolvePath, saveScene } from "./workspace.js";
 
 const imageCache = new Map<string, { mtime: number; img: RgbaImage }>();
@@ -35,16 +36,26 @@ async function loadImage(file: string): Promise<RgbaImage> {
 }
 
 /** Decode every part image the scene references. */
-export async function loadAssets(root: string, doc: SceneDoc, parts?: PartMeta[]): Promise<SceneAssets & { parts: PartMeta[] }> {
+export async function loadAssets(root: string, doc: SceneDoc, parts?: PartMeta[], extra: readonly string[] = []): Promise<SceneAssets & { parts: PartMeta[] }> {
   const catalog = parts ?? (await loadParts(root));
   const byId = new Map(catalog.map((p) => [p.id, p]));
-  const ids = new Set([...doc.layers.map((l) => l.part), doc.tileset, ...doc.props.map((p) => p.part)]);
+  const ids = new Set([...doc.layers.map((l) => l.part), doc.tileset, ...doc.props.map((p) => p.part), ...extra]);
   const images = new Map<string, RgbaImage>();
   for (const id of ids) {
     const meta = byId.get(id);
     if (meta) images.set(id, await loadImage(partImagePath(root, meta)));
   }
   return { parts: catalog, meta: (id) => byId.get(id), image: (id) => images.get(id) };
+}
+
+/**
+ * Scene + assets to render: the day doc as is, or (night) the night doc and night assets from nightScene,
+ * with the workspace's bg_sky_night part loaded for the sky.
+ */
+export async function loadRenderScene(root: string, doc: SceneDoc, night = false): Promise<{ doc: SceneDoc; assets: SceneAssets; night: boolean }> {
+  if (!night) return { doc, assets: await loadAssets(root, doc), night };
+  const n = nightScene(doc, await loadAssets(root, doc, undefined, [NIGHT_SKY_PART]));
+  return { ...n, night };
 }
 
 /**

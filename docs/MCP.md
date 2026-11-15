@@ -35,8 +35,10 @@ Cursor `~/.cursor/mcp.json`:
 | `list_scenes` | saved scenes |
 | `get_scene` | one scene document |
 | `compose_scene` | create/overwrite a scene: `layers`, `tileset`, `terrain {groundHeight, hills, pits, platforms}` or `tiles` rows, `streets` (rows of props chained edge to edge), `props`, `collision`, `characters` (Easy Sprite side-view sheets: `sheet`, `x`, `facing`, `anim` idle\|walk, `frame`, `layer`, `patrol`). Legacy `character` still works. |
-| `render_preview` | PNG of the whole level (`mode: level`) or 3 camera snapshots (`mode: parallax`), with every placed character; returns the image inline + its path + character count |
-| `export_scene` | `png` · `godot` · `pixi` into `<dir>/<id>-<preset>/` |
+| `render_preview` | PNG of the whole level (`mode: level`) or 3 camera snapshots (`mode: parallax`), with every placed character; returns the image inline + its path + character count. `night: true` renders the night version (`<id>_<mode>_night.png`) |
+| `export_scene` | `png` · `godot` · `pixi` into `<dir>/<id>-<preset>/`; `night: true` also writes the night twin (`<id>_night.*`, art under `night/`) |
+| `compose_town` | seeded side-view town street for a world-map town: `kind` (`thai_town` · `malay_kampung` · `chinese_town` · `rural_village` · `brick_city`), `seed`, `name {th, en, ms}`, `town` / `map` ids for the exits back, optional `export` (`png,godot,pixi` or `all`), `dir` and `night` (also export the night street) |
+| `towns_from_overworld` | read an Easy Tilemap overworld map (`map`: path inside the workspace or an allowed folder) and compose one street per town (kind, seed, names, scene id from the map), optional `export` / `dir` / `night` — the folder to pass to `easytilemap export --town-scenes` |
 
 Prompt: `easyscene-operator` (rules + flow).
 
@@ -44,6 +46,7 @@ Prompt: `easyscene-operator` (rules + flow).
 
 ```text
 workspace_info → list_parts → compose_scene → render_preview (look at it) → export_scene
+# world map towns: Easy Tilemap generate_overworld → towns_from_overworld {map, export: "godot,pixi"} → easytilemap export_map {townScenes}
 ```
 
 Example `compose_scene` arguments:

@@ -18,12 +18,15 @@ import { renderParallaxStrip, renderScene } from "../shared/render.js";
 import { DEFAULT_SCROLL, EXPORT_PRESETS, LAYER_BANDS, PROP_CATEGORIES, TILE_CODE_LABELS, propCategory } from "../shared/types.js";
 import { checkRequest, resolveToken } from "../shared/requestGuard.js";
 import { STREET_SETS, type StreetSetId } from "../shared/streetGen.js";
-import { composeAndSave, loadAssets, resolveCharacters } from "../lib/compose.js";
+import { composeAndSave, loadAssets, loadRenderScene, resolveCharacters } from "../lib/compose.js";
+import { nightSprite } from "../shared/night.js";
 import { sceneCharacters } from "../shared/characters.js";
 import { exportScene } from "../lib/export.js";
 import { encodePng } from "../lib/png.js";
-import { getWorkspaceSummary, loadParts, loadScene, loadScenes, resolveOutDir, resolveWorkspace, summarizeScene } from "../lib/workspace.js";
-import { mkdir, writeFile } from "node:fs/promises";
+import { getWorkspaceSummary, initWorkspace, loadParts, loadScene, loadScenes, resolveOutDir, resolveWorkspace, summarizeScene } from "../lib/workspace.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { composeTowns } from "../lib/towns.js";
+import { TOWN_KINDS, townSpecsFromOverworld, type TownSceneSpec } from "../shared/townGen.js";
 
 export const MCP_TOOL_NAMES = [
   "workspace_info",
@@ -33,6 +36,8 @@ export const MCP_TOOL_NAMES = [
   "compose_scene",
   "render_preview",
   "export_scene",
+  "compose_town",
+  "towns_from_overworld",
 ] as const;
 
 const SceneIdSchema = z.string().regex(/^[a-z0-9_-]+$/, "Use a-z, 0-9, _ or -");
@@ -271,15 +276,15 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         id: SceneIdSchema,
         mode: z.enum(["level", "parallax"]).optional().describe("level = whole map (default); parallax = 3 viewport snapshots"),
         cameraX: z.number().optional().describe("level mode: camera x for parallax offset (default 0)"),
+        night: z.boolean().optional().describe("Night version: night sky with moon and stars, moonlit art, lit windows / lamps / lanterns with glow, tinted characters (file gets a _night suffix)"),
         dir: z.string().optional().describe("Folder for the PNG (default exports/previews)"),
       },
     },
-    async ({ id, mode, cameraX, dir }) => {
+    async ({ id, mode, cameraX, night, dir }) => {
       try {
-        const doc = await loadScene(root, id);
-        const assets = await loadAssets(root, doc);
+        const { doc, assets } = await loadRenderScene(root, await loadScene(root, id), !!night);
         const resolved = await resolveCharacters(root, sceneCharacters(doc));
-        const characters = resolved.characters.map((c) => c.sprite);
+        const characters = resolved.characters.map((c) => (night ? nightSprite(c.sprite) : c.sprite));
         const legacy = !doc.characters?.length && characters.length === 1;
         const img =
           mode === "parallax"
@@ -287,7 +292,7 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
             : renderScene(doc, assets, { cameraX, characters });
         const outDir = resolveOutDir(root, dir, path.join("exports", "previews"));
         await mkdir(outDir, { recursive: true });
-        const file = path.join(outDir, `${id}_${mode ?? "level"}.png`);
+        const file = path.join(outDir, `${id}_${mode ?? "level"}${night ? "_night" : ""}.png`);
         const png = encodePng(img);
         await writeFile(file, png);
         return {
@@ -313,12 +318,75 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         dir: z.string().optional().describe("Parent folder (default workspace exports/)"),
         baseName: SceneIdSchema.optional(),
         godotParallax: z.enum(["parallax2d", "legacy"]).optional().describe("legacy = ParallaxBackground/ParallaxLayer"),
+        night: z.boolean().optional().describe("Also export the night version: <base>_night.tscn / _night.pixi.json / _night_preview.png, art under night/"),
       },
     },
-    async ({ id, preset, dir, baseName, godotParallax }) => {
+    async ({ id, preset, dir, baseName, godotParallax, night }) => {
       try {
-        const res = await exportScene(root, { sceneId: id, preset, dir, baseName, godot: { parallax: godotParallax } });
+        const res = await exportScene(root, { sceneId: id, preset, dir, baseName, godot: { parallax: godotParallax }, ...(night ? { night: true } : {}) });
         return text(res);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
+  const townResult = (done: Awaited<ReturnType<typeof composeTowns>>, warnings: string[] = []) =>
+    text({ towns: done.map((d) => ({ ...d, exports: d.exports.map((e) => ({ preset: e.preset, dir: e.dir, files: e.paths?.length ?? 0, warnings: e.warnings })) })), warnings });
+  const ExportList = z.string().regex(/^(all|(png|godot|pixi)(,(png|godot|pixi))*)$/).optional().describe("Also export: png,godot,pixi or all");
+
+  server.registerTool(
+    "compose_town",
+    {
+      title: "Compose town",
+      description:
+        `Compose a seeded side-view town street (scenes/<id>.json) for a JRPG overworld town: ${TOWN_KINDS.join(" | ")}. Thai shophouses and a wat, a Malay kampung (stilt houses, mosque silhouette, halal food stalls), Chinese-Thai shophouses and a shrine, rural rice-barn villages, brick city. Exits at the street ends lead back to the overworld (town / map ids).`,
+      inputSchema: {
+        id: SceneIdSchema,
+        kind: z.enum(TOWN_KINDS),
+        seed: z.number().int().optional().describe("Same seed → same street (default 1)"),
+        name: z.object({ th: z.string(), en: z.string(), ms: z.string().optional() }).optional(),
+        town: z.string().optional().describe("Overworld town id (for the exits back)"),
+        map: z.string().optional().describe("Overworld map id (for the exits back)"),
+        export: ExportList,
+        dir: z.string().optional().describe("Export parent folder (default workspace exports/)"),
+        night: z.boolean().optional().describe("Also export the night version: <base>_night.tscn / _night.pixi.json / _night_preview.png, art under night/"),
+      },
+    },
+    async ({ id, kind, seed, name, town, map, export: ex, dir, night }) => {
+      try {
+        const spec: TownSceneSpec = { id, kind, seed: seed ?? 1, ...(name ? { name } : {}), ...(town ? { town } : {}), ...(map ? { map } : {}) };
+        const out = dir ? resolveOutDir(root, dir, "exports") : undefined;
+        await initWorkspace(root); // sample parts (same as the CLI's `town`)
+        return townResult(await composeTowns(root, [spec], { export: ex, out, trustedPaths: false, night }));
+      } catch (e) {
+        return err(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
+  server.registerTool(
+    "towns_from_overworld",
+    {
+      title: "Towns from overworld",
+      description:
+        "Read an Easy Tilemap overworld map (maps/<id>.json with an overworld block) and compose one side-view street per town (its kind, seed, Thai/English/Malay name and scene id), optionally exporting them for the overworld's Godot / Pixi game (easytilemap export --town-scenes <dir>).",
+      inputSchema: {
+        map: z.string().describe("Path to the Easy Tilemap map JSON (inside the workspace or an allowed folder)"),
+        export: ExportList,
+        dir: z.string().optional().describe("Export parent folder (default workspace exports/)"),
+        night: z.boolean().optional().describe("Also export the night version: <base>_night.tscn / _night.pixi.json / _night_preview.png, art under night/"),
+      },
+    },
+    async ({ map, export: ex, dir, night }) => {
+      try {
+        const file = resolveOutDir(root, map, "");
+        const doc = JSON.parse(await readFile(file, "utf8"));
+        const { specs, warnings } = townSpecsFromOverworld(doc);
+        if (!specs.length) return err(`No overworld towns in ${map}${warnings.length ? `: ${warnings.join("; ")}` : ""}`);
+        const out = dir ? resolveOutDir(root, dir, "exports") : undefined;
+        await initWorkspace(root);
+        return townResult(await composeTowns(root, specs, { export: ex, out, trustedPaths: false, night }), warnings);
       } catch (e) {
         return err(e instanceof Error ? e.message : String(e));
       }

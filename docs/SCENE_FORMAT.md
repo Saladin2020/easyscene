@@ -92,6 +92,34 @@ parts/props/<id>/prop.png           + part.json  { kind: "prop", defaultLayer: "
 
 `category` (optional) groups props in the editor and in `list_parts`: `building` · `street` · `nature` · `water` · `decor` (the default when missing). Building props follow the modular rules: width a multiple of `tileSize`, art that reaches both footprint edges, bottom row = ground line. Then `x += width` chains them with no gap or overlap, and the editor snaps a dragged building to its neighbours (Shift = free).
 
+## Exits and towns (optional)
+
+```jsonc
+"exits": [{ "side": "left", "to": "world", "at": "kampung_bunga" }],   // side: left | right; to: map or scene id; at: arrival point
+"town": { "kind": "malay_kampung", "id": "kampung_bunga", "map": "world", "name": { "th": "กำปงบุหงา", "en": "Kampung Bunga", "ms": "Kampung Bunga" } }
+```
+
+Both are additive to `easyscene/1` and kept through save / normalize; exits with a bad side or no `to` are
+dropped with a warning. `easyscene town` / `towns --from-overworld` fill them in. A runtime (e.g. the Easy
+Tilemap overworld) leaves the scene when the player walks off an exit side. Exports carry them only when a
+scene has them: the Godot export writes `<id>.scene.json` next to the `.tscn`, the Pixi export adds `exits` and
+`town` to `<id>.pixi.json`. Scenes without exits export byte for byte as before (`test/compat.test.ts`).
+
+## Night exports (optional)
+
+Night is not stored in the scene: it is derived from the day art at render / export time (`render --night`,
+`export --night`, MCP `night: true`). With `--night` an export also writes the night twin next to the day files:
+
+| Preset | Night files |
+| --- | --- |
+| godot | `<base>_night.tscn`, `<base>_night_tileset.tres`, `<base>_night_preview.png`, art under `night/assets/` (same `project.godot`, `camera_pan.gd`) |
+| pixi | `<base>_night.pixi.json` (`"lighting": "night"`, `"day": "<base>.pixi.json"`, same tiles / collision / exits / town), `<base>_night_preview.png`, art under `night/`; the day `<base>.pixi.json` gains `"night": "<base>_night.pixi.json"` |
+| png | `<base>_night_preview.png`, `<base>_night_parallax.png`, layer / tilemap / props PNGs under `night/` |
+
+The night scene adds one front prop, `__night_glow` (a map-sized semi-transparent warm halo around every light),
+and recoloured parts are baked before the night grade (`<part>__c_<colour>…` image names). Exports without
+`--night` are byte for byte the same as before (`test/compat.test.ts`, `test/night.test.ts`).
+
 ## Streets (compose input only)
 
 `compose_scene` / `compose --input` also accept `streets: [{ x?, gap?, items: [id | { part, flipX?, color?, tint?, tintAmount?, layer?, gapBefore? }] }]`. Each street is expanded into ordinary entries in `props` (left to right, `x` snapped to the grid), so the saved scene format is unchanged. CLI: `--street <x>:<id>,<id>,…` (repeatable).

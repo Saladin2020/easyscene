@@ -9,7 +9,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { composeAndSave, loadAssets, loadRenderScene } from "../src/lib/compose.js";
 import { exportScene } from "../src/lib/export.js";
 import { loadParts, loadScene } from "../src/lib/workspace.js";
-import { NIGHT_GLOW_PART, nightProp, nightSheet, skyOneMoon } from "../src/shared/night.js";
+import { NIGHT_GLOW_PART, NIGHT_MASK_FILE, nightProp, nightSheet, skyOneMoon } from "../src/shared/night.js";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { decodePng, encodePng } from "../src/lib/png.js";
+import { initWorkspace, partImagePath } from "../src/lib/workspace.js";
 import type { RgbaImage } from "../src/shared/raster.js";
 import { renderScene } from "../src/shared/render.js";
 import { TOWN_KINDS, townInput } from "../src/shared/townGen.js";
@@ -51,9 +54,10 @@ describe("night town streets", () => {
     const dImg = renderScene(day.doc, day.assets);
     const nImg = renderScene(night.doc, night.assets);
     expect(meanLum(nImg)).toBeLessThan(meanLum(dImg) * 0.6);
-    // the sky band is the night sky, twice as wide so the moon shows once per loop
+    // the sky band is the night sky, one loop as wide as the level (min. 2×) so the moon shows once
     const sky = night.doc.layers[0]!.part;
-    expect(night.assets.image(sky)!.width).toBe(2 * day.assets.image(sky)!.width);
+    const sw = day.assets.image(sky)!.width;
+    expect(night.assets.image(sky)!.width).toBe(Math.max(2, Math.ceil((scene.width * scene.tileSize) / sw)) * sw);
     // a glow layer in front, and real lights (not just a dark picture)
     expect(night.doc.props.at(-1)).toMatchObject({ part: NIGHT_GLOW_PART, layer: "front" });
     expect(day.doc.props.some((p) => p.part === NIGHT_GLOW_PART)).toBe(false);
@@ -156,4 +160,116 @@ describe("night export", () => {
       }
     }
   }, 120_000);
+});
+
+const bright = (img: RgbaImage, x0: number, x1: number) => {
+  let n = 0;
+  for (let y = 0; y < img.height * 0.55; y++) for (let x = x0; x < x1; x++) {
+    const i = (y * img.width + x) * 4;
+    if (img.data[i]! > 230 && img.data[i + 1]! > 225 && img.data[i + 2]! > 190) n++;
+  }
+  return n;
+};
+
+describe("one moon on wide levels", () => {
+  it("skyOneMoon(n) keeps the moon in the first loop only", async () => {
+    const doc = await loadScene(root, "village_day");
+    const sky = (await loadAssets(root, doc, undefined, ["bg_sky_night"])).image("bg_sky_night")!;
+    const four = skyOneMoon(sky, 4);
+    expect(four.width).toBe(4 * sky.width);
+    const first = bright(four, 0, sky.width);
+    for (let k = 1; k < 4; k++) expect(bright(four, k * sky.width, (k + 1) * sky.width)).toBeLessThan(first - 60);
+  });
+
+  it("a town street wider than 960 px renders a single moon", async () => {
+    const parts = await loadParts(root);
+    const { scene } = await composeAndSave(root, townInput(parts, { id: "wide_thai", kind: "thai_town", seed: 11 }));
+    expect(scene.width * scene.tileSize).toBeGreaterThan(960);
+    const night = await loadRenderScene(root, scene, true);
+    const sky = night.assets.image(night.doc.layers[0]!.part)!;
+    expect(sky.width).toBeGreaterThanOrEqual(scene.width * scene.tileSize);
+    const loop = (await loadAssets(root, scene, undefined, ["bg_sky_night"])).image("bg_sky_night")!.width;
+    const first = bright(sky, 0, loop);
+    for (let x = loop; x < sky.width; x += loop) expect(bright(sky, x, x + loop)).toBeLessThan(first - 60);
+  });
+});
+
+const lumAt = (img: RgbaImage, x: number, y: number) => {
+  const i = (y * img.width + x) * 4;
+  return 0.299 * img.data[i]! + 0.587 * img.data[i + 1]! + 0.114 * img.data[i + 2]!;
+};
+const isWarm = (img: RgbaImage, x: number, y: number) => {
+  const i = (y * img.width + x) * 4;
+  return img.data[i]! > 150 && img.data[i]! - img.data[i + 2]! > 60;
+};
+
+describe("night masks (explicit windows and lamps)", () => {
+  it("sample buildings ship a night.png; only marked pixels light up (gold paint and trims stay paint)", async () => {
+    const parts = await loadParts(root);
+    const byId = new Map(parts.map((p) => [p.id, p]));
+    for (const id of ["prop_bld_thai_house", "prop_bld_wat_sala", "prop_bld_mosque_wooden", "prop_bld_malay_house", "prop_bld_mini_mart", "prop_bld_shophouse_3f_gold", "prop_bld_brick_row3_red_bay", "prop_lantern", "prop_bld_fruit_stall"]) {
+      expect(existsSync(path.join(path.dirname(partImagePath(root, byId.get(id)!)), NIGHT_MASK_FILE)), id).toBe(true);
+    }
+    const load = async (id: string) => {
+      const dir = path.dirname(partImagePath(root, byId.get(id)!));
+      return { img: decodePng(await readFile(partImagePath(root, byId.get(id)!))), mask: decodePng(await readFile(path.join(dir, NIGHT_MASK_FILE))) };
+    };
+    // wat sala: the gold door (x 53..74, y 93..129) and the gold gable are graded like paint, not lit
+    const sala = await load("prop_bld_wat_sala");
+    const ns = nightProp(sala.img, "prop_bld_wat_sala", byId.get("prop_bld_wat_sala"), sala.mask).image;
+    for (const [x, y] of [[58, 110], [70, 120], [64, 30]] as const) {
+      expect(lumAt(ns, x, y), `${x},${y}`).toBeLessThan(lumAt(sala.img, x, y) * 0.55);
+      expect(isWarm(ns, x, y)).toBe(false);
+    }
+    // thai house: the left window is always lit, so is the door gap
+    const house = await load("prop_bld_thai_house");
+    const nh = nightProp(house.img, "prop_bld_thai_house", byId.get("prop_bld_thai_house"), house.mask);
+    expect(isWarm(nh.image, 24, 70)).toBe(true);
+    expect(isWarm(nh.image, 49, 80)).toBe(true);
+    expect(nh.lights.length).toBeGreaterThanOrEqual(2);
+    // the yellow chofa finial on the roof is not a lamp
+    expect(isWarm(nh.image, 50, 3)).toBe(false);
+    // mosque: louvred windows glow
+    const mosque = await load("prop_bld_mosque_wooden");
+    const nm = nightProp(mosque.img, "prop_bld_mosque_wooden", byId.get("prop_bld_mosque_wooden"), mosque.mask).image;
+    expect(isWarm(nm, 40 + 12 + 5, 118)).toBe(true);
+  });
+
+  it("without a mask, small yellow trims on a non-lamp part are not lit", () => {
+    // 16×16 wall with a 1 px yellow trim line and a 6×6 blue pane
+    const w = 16, h = 16, data = new Uint8Array(w * h * 4);
+    for (let p = 0; p < w * h; p++) data.set([120, 90, 70, 255], p * 4);
+    for (let x = 0; x < w; x++) data.set([255, 226, 122, 255], (2 * w + x) * 4);
+    for (let y = 6; y < 12; y++) for (let x = 5; x < 11; x++) data.set([70, 110, 170, 255], (y * w + x) * 4);
+    const n = nightProp({ width: w, height: h, data }, "prop_bld_test_wall", { id: "prop_bld_test_wall", kind: "prop", name: "t", image: "prop.png", width: w, height: h, defaultLayer: "back", category: "building" });
+    for (let x = 0; x < w; x++) expect(isWarm(n.image, x, 2), `trim ${x}`).toBe(false);
+  });
+
+  it("init adds night.png to untouched sample parts of an older workspace, not to repainted ones", async () => {
+    const parts = await loadParts(root);
+    const byId = new Map(parts.map((p) => [p.id, p]));
+    const dirOf = (id: string) => path.dirname(partImagePath(root, byId.get(id)!));
+    for (const id of ["prop_bld_thai_house", "prop_bld_wat_sala"]) rmSync(path.join(dirOf(id), NIGHT_MASK_FILE));
+    // "repaint" the sala
+    const sala = decodePng(await readFile(partImagePath(root, byId.get("prop_bld_wat_sala")!)));
+    sala.data.set([1, 2, 3, 255], (100 * sala.width + 60) * 4);
+    writeFileSync(partImagePath(root, byId.get("prop_bld_wat_sala")!), encodePng(sala));
+    await initWorkspace(root);
+    expect(existsSync(path.join(dirOf("prop_bld_thai_house"), NIGHT_MASK_FILE))).toBe(true);
+    expect(existsSync(path.join(dirOf("prop_bld_wat_sala"), NIGHT_MASK_FILE))).toBe(false);
+  }, 60_000);
+});
+
+describe("rural village nights", () => {
+  it("lit houses and fireflies: clearly more warm light than before the masks", async () => {
+    const parts = await loadParts(root);
+    const { scene } = await composeAndSave(root, townInput(parts, { id: "rv_lights", kind: "rural_village", seed: 5 }));
+    const night = await loadRenderScene(root, scene, true);
+    const img = renderScene(night.doc, night.assets);
+    expect(warmLights(img)).toBeGreaterThan(150);
+    const glow = night.assets.image(NIGHT_GLOW_PART)!;
+    let flies = 0;
+    for (let i = 0; i < glow.data.length; i += 4) if (glow.data[i + 3]! > 170 && glow.data[i + 1]! > glow.data[i]!) flies++;
+    expect(flies).toBeGreaterThanOrEqual(4);
+  });
 });

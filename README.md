@@ -173,10 +173,19 @@ overworld game can run the street in Godot or in the browser (`--export godot,pi
 export exactly as before. MCP: `compose_town` and `towns_from_overworld`.
 
 **Night.** Any scene (towns and plain scenes) has a night version made from its day art: the `bg_sky_night`
-sky (moon once per loop, stars, milky way), a moonlit grade on layers, tiles and props (signs keep their
-contrast, just dimmer), glass panes turned into warm lit windows (seeded, some stay dark), lamps, bulbs and
-lanterns kept bright, one warm glow layer in front (a semi-transparent prop, so no blend modes are needed),
-and characters tinted to match.
+sky (one moon per level, however wide: the sky loop is widened to cover the level), a moonlit grade on
+layers, tiles and props (signs keep their contrast, just dimmer), warm lit windows (seeded, some stay dark),
+lamps and lanterns kept bright, lit shop fronts, one warm glow layer in front (a semi-transparent prop, so
+no blend modes are needed), fireflies over rural village streets, and characters tinted to match.
+
+*What lights up* comes from each prop's **night mask**, `parts/props/<id>/night.png`, which the sample
+pipeline writes while it draws the part: red = a window pane (value 1–127 lit by a seeded coin, 128–255
+always lit), green = a lamp / lantern, blue = a lit interior (open shop front or stall), alpha = marked. Only
+marked pixels light up, so yellow trims, gold paint, spire tips and signs stay paint. You can paint a
+`night.png` for your own parts the same way (same size as `prop.png`). Parts without one fall back to colour
+detection (cool glass-like panes become windows; warm bulbs only on lamp-like parts). `init` on an older
+workspace adds `night.png` to every sample part that is still pixel-identical to the sample (repainted parts
+keep colour detection); masks are read by night renders and exports only, day output never changes.
 
 ```bash
 npx tsx src/cli.ts render --id town_bunga --night --scale 2 --out bunga_night.png

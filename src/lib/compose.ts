@@ -16,7 +16,8 @@ import { DEFAULT_GROUND_ROW, type CharacterSprite, type SceneAssets } from "../s
 import { composeScene, normalizeScene, type ComposeSceneInput } from "../shared/scene.js";
 import { DEFAULT_CONFIG, type PartMeta, type SceneCharacter, type SceneDoc } from "../shared/types.js";
 import { decodePng, isPng } from "./png.js";
-import { NIGHT_SKY_PART, nightScene } from "../shared/night.js";
+import { NIGHT_MASK_FILE, NIGHT_SKY_PART, nightScene } from "../shared/night.js";
+import { existsSync } from "node:fs";
 import { assertSafeId, isAllowedPath, loadConfig, loadParts, partImagePath, resolvePath, saveScene } from "./workspace.js";
 
 const imageCache = new Map<string, { mtime: number; img: RgbaImage }>();
@@ -49,12 +50,35 @@ export async function loadAssets(root: string, doc: SceneDoc, parts?: PartMeta[]
 }
 
 /**
+ * Day assets plus what the night pass needs: the bg_sky_night part and each prop's night.png mask
+ * (windows / lamps recorded by the sample pipeline). Only night renders and exports call this.
+ */
+export async function loadNightAssets(root: string, doc: SceneDoc, parts?: PartMeta[]): Promise<SceneAssets & { parts: PartMeta[] }> {
+  const base = await loadAssets(root, doc, parts, [NIGHT_SKY_PART]);
+  const masks = new Map<string, RgbaImage>();
+  const byId = new Map(base.parts.map((p) => [p.id, p]));
+  for (const id of new Set(doc.props.map((p) => p.part))) {
+    const meta = byId.get(id);
+    if (meta?.kind !== "prop") continue;
+    const file = path.join(path.dirname(partImagePath(root, meta)), NIGHT_MASK_FILE);
+    if (existsSync(file)) {
+      try {
+        masks.set(id, await loadImage(file));
+      } catch {
+        // unreadable mask: colour-based night for this part
+      }
+    }
+  }
+  return { ...base, nightMask: (id) => masks.get(id) };
+}
+
+/**
  * Scene + assets to render: the day doc as is, or (night) the night doc and night assets from nightScene,
  * with the workspace's bg_sky_night part loaded for the sky.
  */
 export async function loadRenderScene(root: string, doc: SceneDoc, night = false): Promise<{ doc: SceneDoc; assets: SceneAssets; night: boolean }> {
   if (!night) return { doc, assets: await loadAssets(root, doc), night };
-  const n = nightScene(doc, await loadAssets(root, doc, undefined, [NIGHT_SKY_PART]));
+  const n = nightScene(doc, await loadNightAssets(root, doc));
   return { ...n, night };
 }
 

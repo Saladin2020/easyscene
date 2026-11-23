@@ -10,9 +10,9 @@ import { ATLAS_COLUMNS, atlasIndex, mergeRuns, resolveTile, tileShape } from "..
 import type { BackgroundPart, CollisionRect, ExportPresetId, PropPart, SceneDoc, TilesetPart } from "../shared/types.js";
 import { facingRow, sceneCharacters, walkColumns } from "../shared/characters.js";
 import type { SceneCharacter } from "../shared/types.js";
-import { loadAssets, resolveCharacters, type ResolvedCharacter } from "./compose.js";
+import { loadAssets, loadNightAssets, resolveCharacters, type ResolvedCharacter } from "./compose.js";
 import { encodePng } from "./png.js";
-import { NIGHT_SKY_PART, nightScene, nightSheet, nightSprite } from "../shared/night.js";
+import { nightScene, nightSheet, nightSprite } from "../shared/night.js";
 import { assertSafeId, loadScene, resolveOutDir } from "./workspace.js";
 
 export interface ExportOptions {
@@ -516,7 +516,7 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
     const pre = night ? "night/" : "";
     const base = night ? `${dayBase}_night` : dayBase;
     const { doc, assets } = night
-      ? nightScene(dayDoc, await loadAssets(root, dayDoc, undefined, [NIGHT_SKY_PART]))
+      ? nightScene(dayDoc, await loadNightAssets(root, dayDoc))
       : { doc: dayDoc, assets: await loadAssets(root, dayDoc) };
     for (const id of night ? [] : [doc.tileset, ...doc.layers.map((l) => l.part), ...doc.props.map((p) => p.part)]) {
       if (!assets.image(id)) warnings.push(`Missing part image: ${id}`);

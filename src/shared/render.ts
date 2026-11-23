@@ -10,6 +10,8 @@ import type { BackgroundPart, CharacterLayer, PartMeta, PropLayer, SceneDoc, Til
 export interface SceneAssets {
   meta(id: string): PartMeta | undefined;
   image(id: string): RgbaImage | undefined;
+  /** Night only: a prop's window / lamp mask (night.png next to the part), when it has one. */
+  nightMask?(id: string): RgbaImage | undefined;
 }
 
 export interface CharacterSprite {

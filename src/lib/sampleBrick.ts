@@ -15,7 +15,7 @@
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import {
   H, LEAF, type Rgb, W, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
-  setPx, setWrap, vnoise, wrapX,
+  markRect, maskEnd, maskStart, setPx, setWrap, vnoise, wrapX,
 } from "./pixelArt.js";
 
 // ---------------- palettes ----------------
@@ -109,6 +109,8 @@ function sashWindow(img: RgbaImage, x0: number, y0: number, w: number, h: number
   const r = rng(seed);
   // reveal (dark recess) then frame
   for (let y = y0 - 1; y <= y0 + h; y++) for (let x = x0 - 1; x <= x0 + w; x++) setPx(img, x, y, SASH[1]!);
+  // night: the glass (and curtains / blinds behind it) is one window; the sash bars drawn later stay dark
+  const win = maskStart(img, opts.lit ? "window-lit" : "window");
   for (let y = y0; y < y0 + h; y++) {
     for (let x = x0; x < x0 + w; x++) {
       const u = (x - x0) / Math.max(1, w - 1);
@@ -133,6 +135,7 @@ function sashWindow(img: RgbaImage, x0: number, y0: number, w: number, h: number
     const bh = Math.round(h * (0.25 + r() * 0.25));
     for (let y = y0; y < y0 + bh; y++) hline(img, x0, x0 + w - 1, y, (y - y0) % 2 ? SASH[2]! : SASH[3]!);
   }
+  maskEnd(win);
   // muntins: meeting rail + centre bar
   const mid = y0 + Math.floor(h / 2);
   hline(img, x0, x0 + w - 1, mid, SASH[4]!);
@@ -427,6 +430,8 @@ export function rowhouse(spec: RowhouseSpec): RgbaImage {
     const dx0 = spec.doorSide === "left" ? 5 : w - 5 - doorW - 2;
     const winRanges: Array<[number, number]> = spec.doorSide === "left" ? [[dx0 + doorW + 3, w - 6]] : [[5, dx0 - 2]];
     for (const [a, b] of winRanges) {
+      // night: shop windows are lit (one window per range; the frames drawn below stay dark)
+      const shop = maskStart(img, "window-lit");
       for (let y = fTop + 12; y < bottom - 12; y++) for (let x = a; x <= b; x++) {
         const v = (y - fTop) / (bottom - fTop);
         let c = pick(GLASS, 0.55 - v * 0.3 + (x - a < 3 ? 0.15 : 0), x, y, 0.4);
@@ -434,6 +439,7 @@ export function rowhouse(spec: RowhouseSpec): RgbaImage {
         if ((y - fTop) % 10 >= 6 && hash(Math.floor(x / 3), Math.floor(y / 10), spec.seed) > 0.4) c = mix(c, pick(WARM_LIGHT, 0.6, x, y, 0.4), 0.5);
         setPx(img, x, y, c);
       }
+      maskEnd(shop);
       for (let x = a; x <= b; x++) { setPx(img, x, fTop + 11, fp[4]!); setPx(img, x, bottom - 12, fp[4]!); }
       for (let y = bottom - 11; y < bottom - 3; y++) for (let x = a; x <= b; x++) setPx(img, x, y, pick(fp, (x - a) % 10 < 2 ? 0.75 : 0.42, x, y, 0.3));
       for (let x = a + 8; x < b; x += Math.max(10, Math.floor((b - a) / 3))) vline(img, x, fTop + 12, bottom - 13, fp[3]!);
@@ -618,6 +624,7 @@ function lampPost(): RgbaImage {
   for (let y = 6; y < 15; y++) for (let x = cx - 3; x <= cx + 4; x++) setPx(img, x, y, x === cx - 3 || x === cx + 4 ? IRON[2]! : pick(ramp("#c8b070", "#e8d28e", "#fff0c0"), 0.8 - (y - 6) * 0.06, x, y, 0.4));
   hline(img, cx - 3, cx + 4, 15, IRON[2]!);
   setPx(img, cx, 0, IRON[3]!); setPx(img, cx, 1, IRON[2]!);
+  markRect(img, cx - 2, 6, 6, 9, "light"); // night: the lantern glass
   selOutline(img, 0.4);
   return img;
 }
@@ -654,6 +661,7 @@ function busStop(): RgbaImage {
   // glass back panel with a poster
   for (let y = 14; y < 56; y++) for (let x = 4; x < 44; x++) blendPx(img, x, y, mix(GLASS[5]!, rgb("#ffffff"), 0.2), Math.abs((x - 4) - (y - 14) * 0.5 - 8) < 2 ? 150 : 70);
   for (let y = 18; y < 42; y++) for (let x = 30; x < 42; x++) setPx(img, x, y, y < 24 ? rgb("#2a6aa8") : pick(ramp("#e8d06a", "#f6e6a0"), 0.3 + (x - 30) * 0.05, x, y, 0.4));
+  markRect(img, 30, 18, 12, 24, "window-lit"); // night: the backlit poster
   // bench
   hline(img, 6, 28, 48, rgb("#9a6a3a")); hline(img, 6, 28, 49, rgb("#6a4626"));
   for (const bx of [8, 26]) vline(img, bx, 50, 63, STEEL_C[1]!);

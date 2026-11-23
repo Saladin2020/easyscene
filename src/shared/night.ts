@@ -5,8 +5,10 @@
  *   tiles      → moonlit grade
  *   props      → moonlit grade that keeps relative contrast (signs stay readable, just dim). Parts with a night
  *                mask (night.png, written by the sample pipeline while drawing) light exactly the marked
- *                windows (seeded, some stay dark), lamps and open shop fronts; parts without one fall back to
- *                colour detection (cool glass panes → windows; warm bulbs only on lamp-like parts)
+ *                windows (seeded, some stay dark), lamps and open shop fronts. Every sample prop has one (all-clear
+ *                for props with no lights: power poles, flag pole, trees, cars…). Only parts without a mask (your
+ *                own or repainted art) fall back to colour detection (cool glass panes → windows; warm bulbs only on
+ *                lamp-like parts)
  *   glow       → one map-sized warm halo layer (synthetic front prop "__night_glow") around every light
  *   characters → tinted to match (nightSprite)
  * Pure and deterministic: same scene → same pixels. Day rendering never goes through here.

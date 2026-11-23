@@ -197,6 +197,15 @@ export function nightMaskImage(img: RgbaImage): RgbaImage | undefined {
   return any ? out : undefined;
 }
 
+/**
+ * The explicit night mask of a sample prop: what was marked while drawing, or an all-clear mask (same size) when
+ * nothing was. An all-clear mask means "nothing on this prop lights up", so night renders never fall back to
+ * colour detection for sample art (power poles, flag poles, nets and gold trims stay paint).
+ */
+export function explicitNightMask(img: RgbaImage): RgbaImage {
+  return nightMaskImage(img) ?? { width: img.width, height: img.height, data: new Uint8Array(img.width * img.height * 4) };
+}
+
 /** setPx with horizontal wrap — keeps loop layers seamless. */
 export function setWrap(img: RgbaImage, x: number, y: number, c: Rgb, a = 255): void {
   setPx(img, wrapX(x, img.width), y, c, a);

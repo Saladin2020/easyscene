@@ -25,7 +25,7 @@ import { KAMPUNG_DRAW } from "./sampleKampung.js";
 import { BRICK_DRAW, ROAD_H, ROWHOUSES, rowhouse, rowhouseHeight } from "./sampleBrick.js";
 import {
   H, LEAF, type Rgb, W, WATER_Y, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
-  markNight, nightMaskImage, setPx, setWrap, sphereLight, stamp, vnoise, wrapX,
+  explicitNightMask, markNight, setPx, setWrap, sphereLight, stamp, vnoise, wrapX,
 } from "./pixelArt.js";
 
 export const SAMPLE_LICENSE = "CC0-1.0";
@@ -1224,8 +1224,7 @@ async function addNightMask(dir: string, def: SampleDef): Promise<void> {
     const have = decodePng(await readFile(file));
     const img = def.draw();
     if (have.width !== img.width || have.height !== img.height || !Buffer.from(have.data).equals(Buffer.from(img.data))) return; // repainted: no mask
-    const mask = nightMaskImage(img);
-    if (mask) await writePng(path.join(dir, NIGHT_MASK_FILE), mask);
+    await writePng(path.join(dir, NIGHT_MASK_FILE), explicitNightMask(img));
   } catch {
     // unreadable PNG: leave it to the colour-based night pass
   }
@@ -1256,8 +1255,8 @@ export async function writeSampleParts(root: string, opts: { onlyMissing?: boole
     await writePng(path.join(dir, def.meta.image), img);
     await writeFile(path.join(dir, "part.json"), `${JSON.stringify(def.meta, null, 2)}\n`);
     // windows / lamps recorded while drawing → night.png (read only by night renders; day output never sees it)
-    const mask = def.meta.kind === "prop" ? nightMaskImage(img) : undefined;
-    if (mask) await writePng(path.join(dir, NIGHT_MASK_FILE), mask);
+    // every sample prop gets one, all-clear when nothing on it lights up (no colour-detection guesses)
+    if (def.meta.kind === "prop") await writePng(path.join(dir, NIGHT_MASK_FILE), explicitNightMask(img));
   }
   if (opts.onlyMissing && written.length === 0) return written;
   const manifest = {

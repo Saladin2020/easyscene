@@ -187,10 +187,12 @@ no blend modes are needed), fireflies over rural village streets, and characters
 pipeline writes while it draws the part: red = a window pane (value 1–127 lit by a seeded coin, 128–255
 always lit), green = a lamp / lantern, blue = a lit interior (open shop front or stall), alpha = marked. Only
 marked pixels light up, so yellow trims, gold paint, spire tips and signs stay paint. You can paint a
-`night.png` for your own parts the same way (same size as `prop.png`). Parts without one fall back to colour
-detection (cool glass-like panes become windows; warm bulbs only on lamp-like parts). `init` on an older
-workspace adds `night.png` to every sample part that is still pixel-identical to the sample (repainted parts
-keep colour detection); masks are read by night renders and exports only, day output never changes.
+`night.png` for your own parts the same way (same size as `prop.png`). Every sample prop has one; props with
+nothing to light (power poles, the flag pole, trees, cars, boats) get an all-clear mask, so they never pick up
+stray lights. Only parts without a mask (your own or repainted art) fall back to colour detection (cool
+glass-like panes become windows; warm bulbs only on lamp-like parts). `init` on an older workspace adds
+`night.png` to every sample prop that is still pixel-identical to the sample (repainted parts keep colour
+detection); masks are read by night renders and exports only, day output never changes.
 
 ```bash
 npx tsx src/cli.ts render --id town_bunga --night --scale 2 --out bunga_night.png

@@ -595,6 +595,8 @@ function fisherHut(): RgbaImage {
   for (let x = 66; x < w; x++) { setPx(img, x, deckY - 12, TEAK[5]!); if ((x - 66) % 6 === 0) vline(img, x, deckY - 11, deckY - 1, TEAK[3]!); }
   for (let y = deckY - 11; y < deckY - 2; y++) for (let x = 68; x < 92; x++) if ((x + y) % 3 === 0) setPx(img, x, y, rgb("#3a6a8a"));
   for (let y = deckY + 4; y < h; y++) { setPx(img, 72, y, TEAK[4]!); setPx(img, 80, y, TEAK[2]!); if (y % 5 === 0) hline(img, 72, 80, y, TEAK[3]!); }
+  // night: the dark window opening is a lamp-lit window (the blue nets stay nets)
+  markRect(img, 21, 33, 12, 13, "window-lit");
   selOutline(img, 0.42);
   for (let x = 0; x < w; x++) if (x % 5 !== 0) blendPx(img, x, h - 2, rgb("#e4f6fb"), 120);
   return img;

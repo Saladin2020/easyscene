@@ -83,6 +83,118 @@ export function setPx(img: RgbaImage, x: number, y: number, c: Rgb, a = 255): vo
   img.data[i + 1] = c[1];
   img.data[i + 2] = c[2];
   img.data[i + 3] = a;
+  const m = NIGHT_MASKS.get(img);
+  if (m) {
+    // the last writer owns the pixel: drawing over a pane (frames, grille bars, signs) un-marks it
+    const p = (y * img.width + x) * 3;
+    if (marking && marking.img === img) {
+      m[p] = marking.win;
+      m[p + 1] = marking.light;
+      m[p + 2] = marking.interior;
+    } else {
+      m[p] = 0;
+      m[p + 1] = 0;
+      m[p + 2] = 0;
+    }
+  }
+}
+
+// ---------------- night masks ----------------
+// Sample parts record which pixels are window panes and which are lamps while they are drawn, so the
+// night pass lights exactly those (no colour guessing: yellow trims, gold paint and signs stay paint).
+// Written next to the part as night.png: R = window id (1..127 lit by a seeded coin, 128..255 always lit),
+// G = 255 lamp / bulb (keeps its colour and glows), B = 255 lit interior (an open shop front or stall: keeps
+// its day colours, warmed, and glows softly), A = 255 where marked.
+
+const NIGHT_MASKS = new WeakMap<RgbaImage, Uint8Array>();
+const NEXT_WINDOW = new WeakMap<RgbaImage, number>();
+let marking: { img: RgbaImage; win: number; light: number; interior: number } | null = null;
+export type NightMarkKind = "window" | "window-lit" | "light" | "interior";
+
+function maskFor(img: RgbaImage): Uint8Array {
+  let m = NIGHT_MASKS.get(img);
+  if (!m) {
+    m = new Uint8Array(img.width * img.height * 3);
+    NIGHT_MASKS.set(img, m);
+  }
+  return m;
+}
+
+function nextWindow(img: RgbaImage, lit: boolean): number {
+  const n = (NEXT_WINDOW.get(img) ?? 0) + 1;
+  NEXT_WINDOW.set(img, n);
+  return ((n - 1) % 127) + 1 + (lit ? 128 : 0);
+}
+
+function markValues(img: RgbaImage, kind: NightMarkKind): { win: number; light: number; interior: number } {
+  if (kind === "light") return { win: 0, light: 255, interior: 0 };
+  if (kind === "interior") return { win: 0, light: 0, interior: 255 };
+  return { win: nextWindow(img, kind === "window-lit"), light: 0, interior: 0 };
+}
+
+/** Everything `draw` paints on `img` is marked as `kind` (later paint over it un-marks those pixels). */
+export function markNight(img: RgbaImage, kind: NightMarkKind, draw: () => void): void {
+  withMark(img, markValues(img, kind), draw);
+}
+
+/** Start marking everything painted on `img` as `kind` until `maskEnd(token)` (for long drawing code). */
+export function maskStart(img: RgbaImage, kind: NightMarkKind): { prev: typeof marking } {
+  maskFor(img);
+  const prev = marking;
+  marking = { img, ...markValues(img, kind) };
+  return { prev };
+}
+
+export function maskEnd(token: { prev: typeof marking }): void {
+  marking = token.prev;
+}
+
+function withMark(img: RgbaImage, v: { win: number; light: number; interior: number }, draw: () => void): void {
+  maskFor(img);
+  const prev = marking;
+  marking = { img, ...v };
+  try {
+    draw();
+  } finally {
+    marking = prev;
+  }
+}
+
+/**
+ * Mark pixels already drawn in a rectangle as `kind`, skipping transparent ones, ones `only` rejects and ones
+ * already marked.
+ * One call = one window for the window kinds.
+ */
+export function markRect(img: RgbaImage, x0: number, y0: number, w: number, h: number, kind: NightMarkKind, only?: (c: Rgb, x: number, y: number) => boolean): void {
+  const m = maskFor(img);
+  const v = markValues(img, kind);
+  for (let y = Math.max(0, y0); y < Math.min(img.height, y0 + h); y++) for (let x = Math.max(0, x0); x < Math.min(img.width, x0 + w); x++) {
+    const i = (y * img.width + x) * 4;
+    if (!img.data[i + 3]) continue;
+    if (only && !only([img.data[i]!, img.data[i + 1]!, img.data[i + 2]!], x, y)) continue;
+    const p = (y * img.width + x) * 3;
+    if (m[p] || m[p + 1] || m[p + 2]) continue; // already marked where it was drawn (panes, lamps)
+    m[p] = v.win;
+    m[p + 1] = v.light;
+    m[p + 2] = v.interior;
+  }
+}
+
+/** The night mask recorded while drawing `img` (undefined when nothing was marked). Transparent pixels are never marked. */
+export function nightMaskImage(img: RgbaImage): RgbaImage | undefined {
+  const m = NIGHT_MASKS.get(img);
+  if (!m) return undefined;
+  const out: RgbaImage = { width: img.width, height: img.height, data: new Uint8Array(img.width * img.height * 4) };
+  let any = false;
+  for (let p = 0; p < img.width * img.height; p++) {
+    if (!img.data[p * 4 + 3] || (!m[p * 3] && !m[p * 3 + 1] && !m[p * 3 + 2])) continue;
+    out.data[p * 4] = m[p * 3]!;
+    out.data[p * 4 + 1] = m[p * 3 + 1]!;
+    out.data[p * 4 + 2] = m[p * 3 + 2]!;
+    out.data[p * 4 + 3] = 255;
+    any = true;
+  }
+  return any ? out : undefined;
 }
 
 /** setPx with horizontal wrap — keeps loop layers seamless. */

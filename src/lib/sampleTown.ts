@@ -13,7 +13,7 @@
 import { createImage, hslToRgb, rgbToHsl, type RgbaImage } from "../shared/raster.js";
 import {
   H, LEAF, type Rgb, W, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
-  setPx, setWrap, sphereLight, vnoise, wrapX,
+  markNight, markRect, setPx, setWrap, sphereLight, vnoise, wrapX,
 } from "./pixelArt.js";
 import { THAI_SIGNS, type ThaiSignKey } from "./thaiSignText.js";
 
@@ -221,17 +221,19 @@ function awning(img: RgbaImage, x0: number, y0: number, w: number, h: number, a:
 }
 
 /** Glass pane with interior, cool tint and diagonal sky reflections. */
-function glassPane(img: RgbaImage, x0: number, y0: number, w: number, h: number, interior?: (x: number, y: number) => Rgb | undefined, tint = 0.35): void {
-  for (let y = y0; y < y0 + h; y++) {
-    for (let x = x0; x < x0 + w; x++) {
-      const inside = interior?.(x - x0, y - y0);
-      let c = inside ? mix(inside, GLASS[3]!, tint) : pick(GLASS, 0.85 - ((y - y0) / h) * 0.7, x, y, 0.5);
-      const d = (x - x0 + (y - y0) * 0.7) % 38;
-      if (d > 5 && d < 9) c = mix(c, GLINT, 0.42);
-      else if (d > 11 && d < 12.5) c = mix(c, GLINT, 0.3);
-      setPx(img, x, y, c);
+function glassPane(img: RgbaImage, x0: number, y0: number, w: number, h: number, interior?: (x: number, y: number) => Rgb | undefined, tint = 0.35, night: "window" | "window-lit" = "window"): void {
+  markNight(img, night, () => {
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) {
+        const inside = interior?.(x - x0, y - y0);
+        let c = inside ? mix(inside, GLASS[3]!, tint) : pick(GLASS, 0.85 - ((y - y0) / h) * 0.7, x, y, 0.5);
+        const d = (x - x0 + (y - y0) * 0.7) % 38;
+        if (d > 5 && d < 9) c = mix(c, GLINT, 0.42);
+        else if (d > 11 && d < 12.5) c = mix(c, GLINT, 0.3);
+        setPx(img, x, y, c);
+      }
     }
-  }
+  });
   hline(img, x0, x0 + w - 1, y0, mix(GLASS[0]!, SHADOW, 0.4));
 }
 
@@ -297,10 +299,12 @@ function acUnit(img: RgbaImage, x: number, y: number): void {
 function redLantern(img: RgbaImage, cx: number, y: number): void {
   vline(img, cx, y, y + 1, STEEL[1]!);
   hline(img, cx - 2, cx + 2, y + 2, YELLOW[3]!);
-  for (let yy = 0; yy < 7; yy++) {
-    const half = [2, 3, 4, 4, 4, 3, 2][yy]!;
-    for (let dx = -half; dx <= half; dx++) setPx(img, cx + dx, y + 3 + yy, pick(RED, 0.82 - (dx / half) * 0.4 - yy * 0.03, cx + dx, y + yy, 0.3));
-  }
+  markNight(img, "light", () => {
+    for (let yy = 0; yy < 7; yy++) {
+      const half = [2, 3, 4, 4, 4, 3, 2][yy]!;
+      for (let dx = -half; dx <= half; dx++) setPx(img, cx + dx, y + 3 + yy, pick(RED, 0.82 - (dx / half) * 0.4 - yy * 0.03, cx + dx, y + yy, 0.3));
+    }
+  });
   hline(img, cx - 2, cx + 2, y + 10, YELLOW[2]!);
   setPx(img, cx, y + 11, RED[2]!);
   setPx(img, cx, y + 12, RED[1]!);
@@ -431,7 +435,7 @@ function noodleShop(): RgbaImage {
     if (y > 5 && x % 6 < 3) return x % 12 < 6 ? TEAK[3]! : CLOTH[3]!;
     if (y > 5) return GREEN[4]!;
     return rgb("#3a2a2a");
-  }, 0.18);
+  }, 0.18, "window-lit");
   for (const [px, pw] of [[8, 9], [17, 9]] as const) {
     for (let y = 66; y < 80; y++) for (let x = px; x < px + pw; x++) setPx(img, x, y, pick(STEEL, 0.95 - ((x - px) / pw) * 0.75, x, y, 0.4));
     hline(img, px - 1, px + pw, 65, STEEL[5]!);
@@ -467,6 +471,8 @@ function noodleShop(): RgbaImage {
   stool(110, BLUE);
   plinth(img, 0, w - 1, 4);
   selOutline(img, 0.42);
+  // night: the open shop behind the posts is lit (cart glass and lanterns are marked where drawn)
+  markRect(img, 6, 30, 128 - 12, 112 - 34, "interior");
   return img;
 }
 
@@ -518,9 +524,10 @@ function miniMart(): RgbaImage {
   };
   rect(img, 3, 36, 138, 3, STEEL[4]!);
   hline(img, 3, 140, 36, STEEL[5]!);
-  glassPane(img, 7, 39, 42, 57, interior(7), 0.22);
-  glassPane(img, 53, 39, 39, 57, interior(53), 0.3);
-  glassPane(img, 96, 39, 42, 57, (x, y) => (y > 3 && y < 54 ? fridge(x, y) : interior(96)(x, y)), 0.22);
+  // a 24 h store: every pane is lit at night
+  glassPane(img, 7, 39, 42, 57, interior(7), 0.22, "window-lit");
+  glassPane(img, 53, 39, 39, 57, interior(53), 0.3, "window-lit");
+  glassPane(img, 96, 39, 42, 57, (x, y) => (y > 3 && y < 54 ? fridge(x, y) : interior(96)(x, y)), 0.22, "window-lit");
   for (const mx of [3, 49, 92, 138]) {
     for (let y = 36; y < 97; y++) { setPx(img, mx, y, STEEL[5]!); setPx(img, mx + 1, y, STEEL[4]!); setPx(img, mx + 2, y, STEEL[2]!); setPx(img, mx + 3, y, STEEL[1]!); }
   }
@@ -542,7 +549,7 @@ function miniMart(): RgbaImage {
   rect(img, 112, 80, 26, 4, BLUE[3]!);
   hline(img, 112, 137, 80, BLUE[5]!);
   hline(img, 112, 137, 83, BLUE[1]!);
-  glassPane(img, 114, 85, 22, 6, (x) => [RED[4]!, YELLOW[4]!, PINK[4]!, GREEN[5]!, CLOTH[3]!][Math.floor(x / 3) % 5], 0.2);
+  glassPane(img, 114, 85, 22, 6, (x) => [RED[4]!, YELLOW[4]!, PINK[4]!, GREEN[5]!, CLOTH[3]!][Math.floor(x / 3) % 5], 0.2, "window-lit");
   rect(img, 117, 93, 16, 5, BLUE[4]!);
   hline(img, 117, 132, 93, BLUE[5]!);
   for (const fx of [113, 136]) setPx(img, fx, 101, STEEL[1]!);
@@ -614,6 +621,8 @@ function fruitStall(): RgbaImage {
     setPx(img, bx - 3, 36, banana[0]!);
   }
   selOutline(img, 0.42);
+  // night: a bulb under the umbrella lights the hanging bananas and the fruit crates
+  markRect(img, 1, 25, 94, 25, "interior");
   return img;
 }
 
@@ -793,7 +802,11 @@ function shophouse(o: ShophouseOpts): () => RgbaImage {
         if (y < shutterTo) {
           const k = (y - oy) % 3;
           setPx(img, x, y, k === 0 ? STEEL[4]! : k === 1 ? STEEL[3]! : STEEL[1]!);
-        } else setPx(img, x, y, inner(x - 8, y - oy, oh));
+        } else {
+          // the open shop front is lit at night; its lamps / candles glow
+          const c = inner(x - 8, y - oy, oh);
+          markNight(img, c === WARM[3] ? "light" : "interior", () => setPx(img, x, y, c));
+        }
       }
     }
     if (o.shutter !== "closed") {
@@ -898,11 +911,16 @@ function thaiHouse(): RgbaImage {
   };
   win(18);
   win(64);
+  // night: oil-lamp light in both open windows and through the door gap (a lived-in house, also in the village)
+  markRect(img, 19, 65, 12, 11, "window-lit");
+  markRect(img, 65, 65, 12, 11, "window");
+
   for (let y = 62; y < floorY; y++) for (let x = 42; x < 58; x++) {
     const frame = x === 42 || x === 57 || y === 62;
     const panel = (x === 45 || x === 54) && y > 65 && y < floorY - 3;
     setPx(img, x, y, frame ? TEAK[0]! : x === 49 || x === 50 ? rgb("#1e120c") : panel ? TEAK[2]! : x < 50 ? TEAK[4]! : TEAK[3]!);
   }
+  markRect(img, 49, 63, 2, 94 - 63 - 3, "window-lit");
   // veranda railing, plants, stairs down to the right
   for (let x = wx1; x < w; x++) {
     setPx(img, x, floorY - 12, TEAK[5]!);

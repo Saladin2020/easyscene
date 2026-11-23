@@ -7,7 +7,7 @@
  * Procedural and original (CC0). No sacred figures, no scripture used as decoration.
  */
 import { createImage, type RgbaImage } from "../shared/raster.js";
-import { type Rgb, alphaAt, blendPx, foliage, getPx, hash, LEAF, mix, pick, ramp, rect, rgb, rng, selOutline, setPx } from "./pixelArt.js";
+import { type Rgb, alphaAt, blendPx, foliage, getPx, hash, LEAF, mix, pick, ramp, markNight, markRect, rect, rgb, rng, selOutline, setPx } from "./pixelArt.js";
 import { THAI_SIGNS, type ThaiSignKey } from "./thaiSignText.js";
 
 const TEAK = ramp("#2e1a12", "#4a2a18", "#6a3e22", "#8c5630", "#ad7140", "#cc9258");
@@ -220,6 +220,9 @@ function mosqueWooden(): RgbaImage {
   }
   pointedArch(img, hx0 + 58, 100, 22, floorY - 100, CHENGAL, rgb("#1e140e"));
   for (let y = 112; y < floorY; y++) { setPx(img, hx0 + 60, y, MOSQUE_GREEN[3]!); setPx(img, hx0 + 77, y, MOSQUE_GREEN[2]!); }
+  // night: the prayer hall is lit (louvres glow between the slats, warm light in the open doorway)
+  for (const wx of [hx0 + 12, hx0 + 34, hx0 + 92, hx0 + 114]) markRect(img, wx + 1, 107, 10, 24, "window-lit");
+  markRect(img, hx0 + 58, 100, 22, floorY - 100, "window-lit", (c) => c[0] === 0x1e && c[1] === 0x14 && c[2] === 0x0e);
   // front stairs down to the ground
   stairs(img, hx0 + 58, floorY + 3, 7, 18, CHENGAL);
   shadeArea(img, hx0 + 4, 101, hx1 - hx0 - 7, 3, 0.3);
@@ -268,6 +271,8 @@ function malayHouse(): RgbaImage {
       setPx(img, x, y, edge ? WHITE[5]! : mix(rgb("#2a1e18"), YELLOW[3]!, Math.max(0, 0.35 - Math.hypot(x - wx - 9, y - 72) / 22)));
     }
     vline(img, wx + 8, 67, 82, WHITE[3]!);
+    // night: lamp light behind the glass (not the white mullion)
+    markRect(img, wx + 1, 67, 16, 16, wx === 12 ? "window-lit" : "window", (c) => c[0] + c[1] + c[2] < 400);
     carvedBand(img, wx, 86, 18, 8, TEAK, PALE_GREEN[4]!);
   }
   // door
@@ -380,6 +385,8 @@ function rotiTeaShop(): RgbaImage {
   for (let y = 30; y < 36; y++) shadeArea(img, 4, y, w - 8, 1, 0.3 - (y - 30) * 0.04);
   plinth(img, 0, w - 1, 4);
   selOutline(img, 0.42);
+  // night: the open teashop is lit
+  markRect(img, 6, 30, 128 - 12, 112 - 34, "interior");
   return img;
 }
 
@@ -429,6 +436,8 @@ function halalStall(): RgbaImage {
   for (let i = 0; i < 10; i++) blendPx(img, 72 + Math.round(Math.sin(i) * 3), 36 - i, rgb("#ffffff"), 110 - i * 9);
   plinth(img, 0, w - 1, 3);
   selOutline(img, 0.42);
+  // night: a lamp under the awning lights the pots and the plates (the counter front stays in shade)
+  markRect(img, 6, 24, 96 - 12, 22, "interior");
   return img;
 }
 
@@ -449,6 +458,8 @@ function watSala(): RgbaImage {
   }
   vline(img, 63, 93, h - 15, GOLD[0]!);
   for (const wx of [24, 92]) for (let y = 96; y < 116; y++) for (let x = wx; x < wx + 12; x++) setPx(img, x, y, x === wx || x === wx + 11 || y === 96 ? GOLD[2]! : rgb("#3a2a22"));
+  // night: candle light in the windows; the gold paint stays paint
+  for (const wx of [24, 92]) markRect(img, wx + 1, 97, 10, 19, "window");
   // pointed gold window crowns
   for (const wx of [24, 92, 52]) for (let k = 0; k < 6; k++) hline(img, wx + k, wx + (wx === 52 ? 23 : 11) - k, (wx === 52 ? 91 : 95) - k, GOLD[4]!);
   // tiered roof: lower green band, upper red tiers
@@ -477,6 +488,8 @@ function chineseShrine(): RgbaImage {
   for (const px of [10, w - 16]) for (let y = 36; y < h - 8; y++) for (let k = 0; k < 6; k++) setPx(img, px + k, y, pick(RED, k === 0 ? 0.95 : 0.6 - k * 0.07, px + k, y, 0.3));
   for (let y = 54; y < h - 8; y++) for (let x = 26; x < 54; x++) setPx(img, x, y, x === 26 || x === 53 || y === 54 ? GOLD[3]! : rgb("#2a1410"));
   vline(img, 40, 55, h - 9, GOLD[2]!);
+  // night: warm light inside the open shrine doors
+  markRect(img, 27, 55, 26, h - 8 - 55, "window-lit", (c) => c[0] === 0x2a && c[1] === 0x14 && c[2] === 0x10);
   // curved roof with upturned ends
   for (let y = 22; y < 38; y++) {
     const v = (y - 22) / 15;
@@ -494,7 +507,7 @@ function chineseShrine(): RgbaImage {
   // lanterns
   for (const lx of [18, w - 19]) {
     vline(img, lx, 39, 41, STEEL[1]!);
-    for (let yy = 0; yy < 7; yy++) { const half = [2, 3, 4, 4, 4, 3, 2][yy]!; hline(img, lx - half, lx + half, 42 + yy, RED[3 + (yy < 3 ? 1 : 0)]!); }
+    markNight(img, "light", () => { for (let yy = 0; yy < 7; yy++) { const half = [2, 3, 4, 4, 4, 3, 2][yy]!; hline(img, lx - half, lx + half, 42 + yy, RED[3 + (yy < 3 ? 1 : 0)]!); } });
     hline(img, lx - 2, lx + 2, 49, YELLOW[3]!);
   }
   selOutline(img, 0.42);

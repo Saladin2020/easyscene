@@ -124,3 +124,18 @@ describe("pixi export", () => {
     expect(loader).toContain("counterFronts");
   });
 });
+
+describe("grocery shopfront (ร้านชำ)", () => {
+  it("has its own sign, differs from the pharmacy shophouse and has a shut twin", () => {
+    const D = defs();
+    const g = D.get("prop_bld_shophouse_grocery")!;
+    const p = D.get("prop_bld_shophouse_3f")!;
+    expect((g.meta as PropPart).shop?.closed).toBe("prop_bld_shophouse_grocery_shut");
+    const gi = g.draw();
+    const pi = p.draw();
+    expect([gi.width, gi.height]).toEqual([pi.width, pi.height]);
+    expect(Buffer.from(gi.data).equals(Buffer.from(pi.data))).toBe(false);
+    const shut = D.get("prop_bld_shophouse_grocery_shut")!.draw();
+    expect(Buffer.from(shut.data).equals(Buffer.from(gi.data))).toBe(false);
+  });
+});

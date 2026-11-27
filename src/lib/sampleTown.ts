@@ -626,7 +626,7 @@ function fruitStall(): RgbaImage {
   return img;
 }
 
-type ShopKind = "coffee" | "pharmacy" | "gold" | "repair";
+type ShopKind = "coffee" | "pharmacy" | "gold" | "repair" | "grocery";
 
 interface ShophouseOpts {
   floors: 2 | 3;
@@ -642,6 +642,7 @@ const SHOP_SIGN: Record<ShopKind, { key: ThaiSignKey; board: Rgb[]; text: Rgb }>
   pharmacy: { key: "pharmacy", board: GREEN, text: rgb("#ffffff") },
   gold: { key: "gold", board: RED, text: YELLOW[4]! },
   repair: { key: "repair", board: BLUE, text: rgb("#ffffff") },
+  grocery: { key: "chamshop", board: ramp("#5a1a10", "#8a2a18", "#b23e22", "#d45a30", "#ee7a44"), text: rgb("#fff4d0") },
 };
 
 /** Shop interior seen through the open shutter (local coords in the 96 px wide opening). */
@@ -698,6 +699,28 @@ function shopInterior(kind: ShopKind, seed: number): (x: number, y: number, ih: 
         if (px === 0) return YELLOW[1]!;
         if (px === 1 || y === 5) return YELLOW[2]!;
         return pick(RED, 0.62 - Math.abs(px - 8) * 0.03 + (y < ih * 0.4 ? 0.1 : 0), x, y, 0.4);
+      }
+      case "grocery": {
+        // ร้านชำ: rice sacks on the floor, packed shelves, snack strips hanging from the beam
+        if (floor) return (x + (y % 2) * 3) % 6 < 3 ? TEAK[2]! : TEAK[1]!;
+        if (y > ih - 15 && y <= ih - 5) {
+          const k = x % 14;
+          if (k > 1 && k < 12) return y === ih - 14 || k === 2 || k === 11 ? CLOTH[1]! : (k === 6 && y === ih - 10) ? RED[3]! : CLOTH[3]!;
+          return TEAK[1]!;
+        }
+        if (y < 9) {
+          if (y === 1) return TEAK[3]!;
+          const k = x % 7;
+          if (y > 1 && k > 1 && k < 5) return [RED[4]!, YELLOW[3]!, GREEN[4]!, BLUE[4]!][Math.floor(x / 7) % 4]!;
+          return rgb("#3a2c22");
+        }
+        if ((y - 9) % 10 === 0) return TEAK[4]!;
+        if ((y - 9) % 10 >= 3) {
+          const slot = Math.floor(x / 4);
+          const cols = [RED[3]!, YELLOW[4]!, GREEN[3]!, BLUE[3]!, CLOTH[3]!, WARM[3]!];
+          if (x % 4 !== 3 && ((y - 9) % 10) > 9 - (3 + Math.floor(hash(slot, Math.floor(y / 10), seed) * 5))) return cols[Math.floor(hash(slot, y >> 3, seed + 2) * cols.length)]!;
+        }
+        return rgb("#4a3a2c");
       }
       default:
         return floor ? STEEL[1]! : rgb("#2a2830");
@@ -792,6 +815,7 @@ function shophouse(o: ShophouseOpts): () => RgbaImage {
     if (o.kind === "pharmacy") for (const px of [18, 94]) { rect(img, px - 1, groundTop + 5, 3, 8, GREEN[5]!); rect(img, px - 4, groundTop + 8, 9, 2, GREEN[5]!); }
     if (o.kind === "coffee") for (const px of [18, 94]) { rect(img, px - 3, groundTop + 6, 6, 5, CLOTH[3]!); setPx(img, px + 3, groundTop + 7, CLOTH[3]!); setPx(img, px + 3, groundTop + 8, CLOTH[3]!); hline(img, px - 4, px + 3, groundTop + 12, CLOTH[2]!); }
     if (o.kind === "gold") for (const px of [18, 94]) for (let k = 0; k < 4; k++) hline(img, px - k, px + k, groundTop + 6 + k, YELLOW[5 - (k >> 1)]!);
+    if (o.kind === "grocery") for (const px of [18, 94]) { rect(img, px - 3, groundTop + 6, 7, 7, CLOTH[1]!); hline(img, px - 2, px + 2, groundTop + 5, CLOTH[2]!); hline(img, px - 2, px + 2, groundTop + 9, RED[4]!); }
     if (o.kind === "repair") for (const px of [18, 94]) { ring(img, px, groundTop + 9, 4, 4, rgb("#ffffff")); setPx(img, px, groundTop + 9, rgb("#ffffff")); }
     const oy = groundTop + 18;
     const oh = h - 3 - oy;
@@ -1478,6 +1502,8 @@ export const TOWN_DRAW = {
   shophouse2fShut: shophouse({ floors: 2, wallHex: "#7fb79c", kind: "coffee", shutter: "closed", tank: true, seed: 11 }),
   shophouse3fShut: shophouse({ floors: 3, wallHex: "#e2c27a", kind: "pharmacy", shutter: "closed", seed: 23 }),
   shophouse3fGoldShut: shophouse({ floors: 3, wallHex: "#e0907a", kind: "gold", shutter: "closed", seed: 37 }),
+  shophouseGrocery: shophouse({ floors: 3, wallHex: "#d8c08e", kind: "grocery", shutter: "open", seed: 29 }),
+  shophouseGroceryShut: shophouse({ floors: 3, wallHex: "#d8c08e", kind: "grocery", shutter: "closed", seed: 29 }),
   thaiHouse,
   powerPole: powerPole({ transformer: true }),
   powerPoleEnd: powerPole({ end: true }),

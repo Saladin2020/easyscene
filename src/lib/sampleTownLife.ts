@@ -190,6 +190,7 @@ export const SHOP_FRONTS: Record<string, { front: (h: number) => ShopFront; coun
   prop_bld_shophouse_2f: { front: (h) => ({ x: 8, y: h - 54, w: 96, h: 51, kind: "shutter" }) },
   prop_bld_shophouse_3f: { front: (h) => ({ x: 8, y: h - 54, w: 96, h: 51, kind: "shutter" }) },
   prop_bld_shophouse_3f_gold: { front: (h) => ({ x: 8, y: h - 54, w: 96, h: 51, kind: "shutter" }) },
+  prop_bld_shophouse_grocery: { front: (h) => ({ x: 8, y: h - 54, w: 96, h: 51, kind: "shutter" }) },
   prop_bld_roti_teashop: { front: () => ({ x: 6, y: 31, w: 116, h: 77, kind: "shutter" }) },
   prop_bld_fruit_stall: { front: () => ({ x: 3, y: 30, w: 90, h: 34, kind: "tarp" }), counterTop: 50 },
   prop_bld_halal_stall: { front: () => ({ x: 7, y: 29, w: 82, h: 36, kind: "tarp" }), counterTop: 46 },
@@ -200,6 +201,7 @@ const SHUT = {
   shophouse2f: TOWN_DRAW.shophouse2fShut,
   shophouse3f: TOWN_DRAW.shophouse3fShut,
   shophouse3fGold: TOWN_DRAW.shophouse3fGoldShut,
+  shophouseGrocery: TOWN_DRAW.shophouseGroceryShut,
 };
 const withSign = (base: () => RgbaImage, at: (img: RgbaImage) => [number, number]) => () => { const img = base(); const [x, y] = at(img); hangSign(img, x, y, false); return img; };
 
@@ -644,6 +646,7 @@ export const TOWN_LIFE_DRAW = {
   shophouse2fClosedSign: withSign(SHUT.shophouse2f, (img) => [56, img.height - 48]),
   shophouse3fClosedSign: withSign(SHUT.shophouse3f, (img) => [56, img.height - 48]),
   shophouse3fGoldClosedSign: withSign(SHUT.shophouse3fGold, (img) => [56, img.height - 48]),
+  shophouseGroceryClosedSign: withSign(SHUT.shophouseGrocery, (img) => [56, img.height - 48]),
   rotiTeashopClosed: closedTwin(KAMPUNG_DRAW.rotiTeaShop, (img) => SHOP_FRONTS.prop_bld_roti_teashop!.front(img.height), 8),
   halalStallClosed: closedTwin(KAMPUNG_DRAW.halalStall, (img) => SHOP_FRONTS.prop_bld_halal_stall!.front(img.height), 9, (f) => [f.x + f.w / 2, f.y + 8]),
   marketStall,

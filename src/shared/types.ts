@@ -62,6 +62,19 @@ export interface PropPart extends PartMetaBase {
    * of the footprint and the bottom row is the ground line, so they chain with `x += width`.
    */
   category?: PropCategory;
+  /** Shop / stall / counter metadata (town life): open-closed twins and the seller-behind-counter split. */
+  shop?: ShopPartMeta;
+}
+
+export interface ShopPartMeta {
+  /** Part id of the closed twin (same size, shutters down / tarp on, "ปิด" sign). */
+  closed?: string;
+  /** On a closed twin: the open part id. */
+  open?: string;
+  /** Rows from this y (prop-local) down are drawn in front of characters, so a seller stands BEHIND the stall / counter. */
+  counterTop?: number;
+  /** Where the seller stands (feet), prop-local px. */
+  seller?: { x: number; y: number };
 }
 
 export type PropCategory = "building" | "street" | "nature" | "water" | "decor";

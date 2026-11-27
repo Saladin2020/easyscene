@@ -17,11 +17,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import { ATLAS_COLUMNS, ATLAS_ROWS, MASK_E, MASK_N, MASK_S, MASK_W } from "../shared/tiles.js";
-import type { BackgroundPart, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, TilesetPart } from "../shared/types.js";
+import type { BackgroundPart, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, ShopPartMeta, TilesetPart } from "../shared/types.js";
 import { decodePng, writePng } from "./png.js";
 import { NIGHT_MASK_FILE } from "../shared/night.js";
 import { TOWN_DRAW } from "./sampleTown.js";
 import { KAMPUNG_DRAW } from "./sampleKampung.js";
+import { SHOP_FRONTS, TOWN_LIFE_DRAW } from "./sampleTownLife.js";
 import { BRICK_DRAW, ROAD_H, ROWHOUSES, rowhouse, rowhouseHeight } from "./sampleBrick.js";
 import {
   H, LEAF, type Rgb, W, WATER_Y, alphaAt, bayer, blendPx, clamp01, foliage, getPx, hash, mix, pick, ramp, rect, rgb, rng, selOutline,
@@ -1138,8 +1139,62 @@ const building = (id: string, name: string, w: number, h: number, recolorBase: s
 const brickBuilding = (id: string, name: string, w: number, h: number, recolorBase: string, tags: string[], draw: () => RgbaImage) =>
   prop(id, name, w, h, "back", recolorBase, ["building", "brick-town", ...tags], draw, undefined, "building");
 
-export function sampleDefs(): SampleDef[] {
+/** Point each open shop at its closed twin (`shop.closed`) and copy the stall counter line. */
+function withShopTwins(defs: SampleDef[]): SampleDef[] {
+  const byId = new Map(defs.map((d) => [d.meta.id, d]));
+  return defs.map((d) => {
+    const m = d.meta as PropPart;
+    const openId = m.shop?.open;
+    if (!openId) return d;
+    const o = byId.get(openId);
+    if (!o || (o.meta as PropPart).shop?.closed) return d;
+    const counterTop = SHOP_FRONTS[openId]?.counterTop;
+    (o.meta as PropPart).shop = { closed: m.id, ...(counterTop !== undefined ? { counterTop, seller: { x: Math.round(o.meta.width / 2), y: o.meta.height - 8 } } : {}) };
+    return d;
+  });
+}
+
+/** Town life (DSK-5): closed twins, market stall, interiors with counters, station / platform / train, airport / plane. */
+function townLifeDefs(): SampleDef[] {
+  const D = TOWN_LIFE_DRAW;
+  const shop = (def: SampleDef, meta: ShopPartMeta): SampleDef => ({ ...def, meta: { ...(def.meta as PropPart), shop: meta } });
+  const twin = (openId: string, id: string, name: string, w: number, h: number, base: string, tags: string[], draw: () => RgbaImage) =>
+    shop(building(id, name, w, h, base, ["closed", "town-life", ...tags], draw), { open: openId, ...(SHOP_FRONTS[openId]?.counterTop !== undefined ? { counterTop: SHOP_FRONTS[openId]!.counterTop } : {}) });
+  const interior = (id: string, name: string, base: string, tags: string[], draw: () => RgbaImage) =>
+    prop(id, name, 480, 224, "back", base, ["interior", "town-life", ...tags], draw, undefined, "building");
+  const counter = (id: string, name: string, w: number, h: number, base: string, tags: string[], draw: () => RgbaImage) =>
+    shop(prop(id, name, w, h, "front", base, ["counter", "interior", "town-life", ...tags], draw, undefined, "decor"), { counterTop: 0, seller: { x: Math.round(w / 2), y: h } });
   return [
+    twin("prop_bld_noodle_shop", "prop_bld_noodle_shop_closed", "Noodle shop · closed", 128, 112, "#cc3a34", ["shop", "food", "noodle"], D.noodleShopClosed),
+    twin("prop_bld_mini_mart", "prop_bld_mini_mart_closed", "Mini mart · closed", 144, 104, "#2e8c52", ["shop", "store"], D.miniMartClosed),
+    twin("prop_bld_fruit_stall", "prop_bld_fruit_stall_closed", "Fruit stall · closed (tarp)", 96, 80, "#2e8c52", ["shop", "market", "fruit"], D.fruitStallClosed),
+    twin("prop_bld_shophouse_2f", "prop_bld_shophouse_2f_shut", "Shophouse 2F · café, shut", 112, 160, "#7fb79c", ["shophouse", "cafe"], D.shophouse2fClosedSign),
+    twin("prop_bld_shophouse_3f", "prop_bld_shophouse_3f_shut", "Shophouse 3F · pharmacy, shut", 112, 192, "#e2c27a", ["shophouse", "pharmacy"], D.shophouse3fClosedSign),
+    twin("prop_bld_shophouse_3f_gold", "prop_bld_shophouse_3f_gold_shut", "Shophouse 3F · gold shop, shut", 112, 192, "#e0907a", ["shophouse", "gold"], D.shophouse3fGoldClosedSign),
+    twin("prop_bld_roti_teashop", "prop_bld_roti_teashop_closed", "Roti + tea shop · closed", 128, 112, "#2a8a5c", ["shop", "food", "roti", "kampung", "muslim", "multicultural"], D.rotiTeashopClosed),
+    twin("prop_bld_halal_stall", "prop_bld_halal_stall_closed", "Halal food stall · closed (tarp)", 96, 80, "#2a8a5c", ["shop", "food", "halal", "market", "kampung", "muslim", "multicultural"], D.halalStallClosed),
+    shop(building("prop_bld_market_stall", "Market stall (ตลาดนัด)", 96, 80, "#f6923a", ["shop", "market", "talat-nat", "produce", "town-life"], D.marketStall), { closed: "prop_bld_market_stall_closed", counterTop: SHOP_FRONTS.prop_bld_market_stall!.counterTop!, seller: { x: 48, y: 72 } }),
+    twin("prop_bld_market_stall", "prop_bld_market_stall_closed", "Market stall · closed (tarp)", 96, 80, "#f6923a", ["shop", "market", "talat-nat"], D.marketStallClosed),
+    interior("prop_int_grocery", "Shop interior · ร้านโชห่วย", "#e8d6a8", ["shop", "grocery"], D.grocery),
+    counter("prop_int_grocery_counter", "Shop counter (seller behind)", 176, 26, "#8c5630", ["shop"], D.groceryCounter),
+    interior("prop_int_station", "Station hall · ticket office", "#e6d8b8", ["station", "train", "ticket"], D.stationHall),
+    counter("prop_int_station_counter", "Ticket window (clerk behind)", 128, 30, "#8c5630", ["station", "ticket"], D.stationCounter),
+    interior("prop_platform_canopy", "Station platform canopy", "#cc3a34", ["station", "platform", "train"], D.platformCanopy),
+    prop("prop_rail_track", "Rail track (side)", 480, 16, "back", "#87919f", ["rail", "train", "station", "town-life"], D.railTrack, undefined, "street"),
+    prop("prop_train_loco", "Train · locomotive", 128, 56, "back", "#4064b4", ["train", "vehicle", "town-life"], D.trainLoco, undefined, "street"),
+    prop("prop_train_car", "Train · passenger car", 160, 56, "back", "#cc3a34", ["train", "vehicle", "town-life"], D.trainCar, undefined, "street"),
+    interior("prop_int_airport", "Airport terminal · check-in", "#d8dde4", ["airport", "flight", "ticket"], D.terminalHall),
+    counter("prop_int_airport_counter", "Check-in desk (agent behind)", 160, 24, "#4064b4", ["airport", "ticket"], D.checkinDesk),
+    prop("prop_plane_side", "Passenger plane (side)", 160, 56, "back", "#e6ded6", ["plane", "airport", "vehicle", "town-life"], D.planeSide, undefined, "street"),
+    prop("prop_plane_sky", "Plane in the sky (small)", 48, 16, "back", "#e6ded6", ["plane", "sky", "town-life"], D.planeSky, undefined, "decor"),
+    prop("prop_control_tower", "Airport control tower", 48, 160, "back", "#b4aa9a", ["airport", "tower", "town-life"], D.controlTower, undefined, "building"),
+    building("prop_bld_airport_terminal", "Airport terminal (ท่าอากาศยาน)", 224, 112, "#4f7896", ["airport", "terminal", "town-life"], D.terminalFacade),
+    prop("prop_runway_marks", "Runway markings", 480, 8, "front", "#ffffff", ["airport", "runway", "town-life"], D.runwayMarks, undefined, "street"),
+  ];
+}
+
+export function sampleDefs(): SampleDef[] {
+  return withShopTwins([
     bg("bg_sky_day", "Sky · day", "sky", 0.05, "#8fc7e8", ["sky", "day"], skyDay),
     bg("bg_sky_dusk", "Sky · dusk", "sky", 0.03, "#c4587a", ["sky", "evening", "sunset"], skyDusk),
     bg("bg_sky_night", "Sky · night", "sky", 0.02, "#2c3a6e", ["sky", "night", "moon", "stars"], skyNight),
@@ -1194,6 +1249,7 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_kolek_boat", "Kolek boat (เรือกอและ)", 96, 36, "back", "#cc3a34", ["boat", "kolek", "fishing", "coast", "kampung", "southern-thai"], KAMPUNG_DRAW.kolekBoat, undefined, "water"),
     prop("prop_fish_rack", "Fish drying rack (ราวตากปลา)", 48, 32, "back", "#c8c45a", ["fishing", "coast", "kampung", "market"], KAMPUNG_DRAW.fishRack, undefined, "decor"),
     prop("prop_fisher_hut", "Stilt fishing hut (บ้านชาวประมง)", 96, 88, "back", "#a88a44", ["house", "fishing", "coast", "kampung", "stilts"], KAMPUNG_DRAW.fisherHut, { x: 0, y: 54, w: 96, h: 6 }, "water"),
+    ...townLifeDefs(),
     // ---- brick town (src/lib/sampleBrick.ts): modular rowhouses + city street dressing ----
     bg("bg_far_city_spires", "City skyline + spires", "far", 0.2, "#7c96b4", ["city", "skyline", "spires", "brick-town"], BRICK_DRAW.citySpires),
     bg("bg_mid_utility_poles", "Utility poles + wires", "mid", 0.5, "#56402c", ["city", "power-lines", "pole", "brick-town"], BRICK_DRAW.utilityPoles),
@@ -1207,7 +1263,7 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_car_hatch_red", "Parked hatchback (red)", 56, 30, "front", "#b82c28", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.redHatch, undefined, "street"),
     prop("prop_car_sedan_dark", "Parked sedan (dark)", 72, 28, "front", "#343c4c", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.darkSedan, undefined, "street"),
     prop("prop_city_road", "Road strip (curb + lanes)", 128, ROAD_H, "front", "#2c2c34", ["road", "asphalt", "curb", "lane", "city", "brick-town"], BRICK_DRAW.roadStrip, undefined, "street"),
-  ];
+  ]);
 }
 
 const KIND_DIR = { background: "backgrounds", tileset: "tilesets", prop: "props" } as const;

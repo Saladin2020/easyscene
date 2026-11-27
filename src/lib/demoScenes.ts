@@ -109,6 +109,86 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
       { part: "prop_canal_boat", x: 1236, y: 238 },
     ],
   },
+  // ---- town life (DSK-5): walk-in interiors (the seller / clerk stands behind a front-layer counter), transit
+  {
+    id: "shop_interior",
+    name: "Shop interior · ร้านโชห่วย",
+    width: 30,
+    layers: ["bg_sky_day"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    props: [
+      { part: "prop_int_grocery", x: 0 },
+      { part: "prop_int_grocery_counter", x: 176 },
+    ],
+  },
+  {
+    id: "station_hall",
+    name: "Station hall · ขายตั๋ว",
+    width: 30,
+    layers: ["bg_sky_day"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    props: [
+      { part: "prop_int_station", x: 0 },
+      { part: "prop_int_station_counter", x: 131 },
+    ],
+  },
+  {
+    id: "station_platform",
+    name: "Station platform · ชานชาลา",
+    width: 30,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    props: [
+      { part: "prop_rail_track", x: 0, y: 214 },
+      { part: "prop_platform_canopy", x: 0 },
+      { part: "prop_flower_box", x: 300 },
+    ],
+  },
+  {
+    id: "airport_terminal",
+    name: "Airport terminal · เช็กอิน",
+    width: 30,
+    layers: ["bg_sky_day"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    props: [
+      { part: "prop_int_airport", x: 0 },
+      { part: "prop_int_airport_counter", x: 60 },
+    ],
+  },
+  {
+    id: "airport_apron",
+    name: "Airport · ท่าอากาศยาน",
+    width: 40,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_hills"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    props: [
+      { part: "prop_control_tower", x: 16 },
+      { part: "prop_bld_airport_terminal", x: 80 },
+      { part: "prop_plane_side", x: 340 },
+      { part: "prop_runway_marks", x: 0, y: 236 },
+      { part: "prop_runway_marks", x: 480, y: 236 },
+      { part: "prop_plane_sky", x: 520, y: 60 },
+    ],
+  },
+  {
+    // ตลาดนัด: a market-day row of stalls; sellers stand behind the tables (counterTop split)
+    id: "market_day",
+    name: "Market day · ตลาดนัด",
+    width: 40,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    streets: [{ x: 16, gap: 16, items: ["prop_bld_market_stall", "prop_bld_halal_stall", "prop_bld_fruit_stall", "prop_bld_market_stall_closed", "prop_bld_noodle_shop_closed"] }],
+    props: [
+      { part: "prop_motorbike", x: 560 },
+      { part: "prop_street_dog", x: 300 },
+    ],
+  },
   {
     // Multicultural village: the wat, the Chinese-Thai shrine and the mosque share one street;
     // the road runs on past the kampung to a fishing beach with kolek boats.

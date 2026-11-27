@@ -39,6 +39,19 @@ WORDS = [
     ("platform", "ชานชาลา", 11),
     ("checkin", "เช็กอิน", 11),
     ("grocery", "ร้านโชห่วย", 11),
+    ("chamshop", "ร้านชำ", 11),
+    # DSK-6: civic buildings, offices, flea market, house shops
+    ("hospital", "โรงพยาบาล", 11),
+    ("police", "สถานีตำรวจ", 11),
+    ("post", "ไปรษณีย์", 11),
+    ("bank", "ธนาคาร", 11),
+    ("district", "ที่ว่าการอำเภอ", 11),
+    ("company", "บริษัท", 11),
+    ("flea", "ตลาดนัดมือสอง", 11),
+    ("clothes", "เสื้อผ้า", 10),
+    ("sale", "ลดราคา", 10),
+    ("fabric", "ร้านผ้า", 11),
+    ("stationery", "เครื่องเขียน", 11),
 ]
 
 out = [

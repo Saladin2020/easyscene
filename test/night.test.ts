@@ -40,7 +40,7 @@ async function tree(dir: string): Promise<Record<string, string>> {
   for (const e of await readdir(dir, { recursive: true, withFileTypes: true })) {
     if (!e.isFile()) continue;
     const f = path.join(e.parentPath, e.name);
-    out[path.relative(dir, f)] = sha(await readFile(f));
+    out[path.relative(dir, f).split(path.sep).join("/")] = sha(await readFile(f));
   }
   return out;
 }

@@ -626,9 +626,9 @@ function fruitStall(): RgbaImage {
   return img;
 }
 
-type ShopKind = "coffee" | "pharmacy" | "gold" | "repair" | "grocery";
+type ShopKind = "coffee" | "pharmacy" | "gold" | "repair" | "grocery" | "stationery" | "clothes";
 
-interface ShophouseOpts {
+export interface ShophouseOpts {
   floors: 2 | 3;
   wallHex: string;
   kind: ShopKind;
@@ -643,6 +643,8 @@ const SHOP_SIGN: Record<ShopKind, { key: ThaiSignKey; board: Rgb[]; text: Rgb }>
   gold: { key: "gold", board: RED, text: YELLOW[4]! },
   repair: { key: "repair", board: BLUE, text: rgb("#ffffff") },
   grocery: { key: "chamshop", board: ramp("#5a1a10", "#8a2a18", "#b23e22", "#d45a30", "#ee7a44"), text: rgb("#fff4d0") },
+  stationery: { key: "stationery", board: ramp("#10204a", "#1a3270", "#264a9a", "#3a68c0", "#5e8ad8"), text: rgb("#fff6c8") },
+  clothes: { key: "clothes", board: ramp("#4a0e30", "#7a1a4a", "#a82a64", "#d0457e", "#ec6e9c"), text: rgb("#ffffff") },
 };
 
 /** Shop interior seen through the open shutter (local coords in the 96 px wide opening). */
@@ -722,6 +724,46 @@ function shopInterior(kind: ShopKind, seed: number): (x: number, y: number, ih: 
         }
         return rgb("#4a3a2c");
       }
+      case "stationery": {
+        // เครื่องเขียน: glass counter of pens, shelves of notebooks in colour blocks, a rack of paper rolls
+        if (floor) return (x + (y % 2) * 3) % 6 < 3 ? CLOTH[2]! : CLOTH[1]!;
+        if (y > ih - 16) {
+          if (y === ih - 16) return STEEL[5]!;
+          if (y < ih - 9) return (x % 5 === 0) ? STEEL[2]! : [RED[4]!, BLUE[4]!, GREEN[4]!, YELLOW[4]!, CLOTH[3]!][Math.floor(x / 2) % 5]!;
+          return y === ih - 9 ? GLINT : CLOTH[1]!;
+        }
+        if (y < 3) return y === 1 ? BLUE[3]! : rgb("#2a3040");
+        if (lamps.some((lx) => Math.hypot(x - lx, y - 5) < 2)) return WARM[3]!;
+        if ((y - 4) % 9 === 0) return TEAK[4]!;
+        const slot = Math.floor(x / 3);
+        const row = Math.floor((y - 4) / 9);
+        const cols = [BLUE[4]!, RED[4]!, YELLOW[4]!, GREEN[4]!, CLOTH[3]!, PINK[3]!, ORANGE[3]!];
+        if (x % 3 !== 2 && (y - 4) % 9 > 8 - (4 + Math.floor(hash(slot, row, seed) * 4))) {
+          const c = cols[Math.floor(hash(slot >> 1, row, seed + 3) * cols.length)]!;
+          return x % 3 === 0 ? mix(c, rgb("#ffffff"), 0.25) : c;
+        }
+        return rgb("#3a3442");
+      }
+      case "clothes": {
+        // เสื้อผ้า: shirts on two hanging rails, folded piles on a table, a mirror
+        if (floor) return (x + (y % 2) * 4) % 8 < 4 ? TEAK[2]! : TEAK[1]!;
+        if (y > ih - 13) return y === ih - 13 ? TEAK[5]! : y < ih - 8 ? [CLOTH[3]!, BLUE[3]!, RED[3]!, YELLOW[3]!][Math.floor(x / 8) % 4]! : TEAK[2]!;
+        if (y < 3) return y === 1 ? PINK[3]! : rgb("#3a2a34");
+        if (lamps.some((lx) => Math.hypot(x - lx, y - 5) < 2)) return WARM[3]!;
+        if (x > 82 && x < 92 && y > 6 && y < ih - 14) return x === 83 || x === 91 ? TEAK[3]! : mix(GLASS[4]!, GLINT, (x + y) % 9 < 2 ? 0.6 : 0.1);
+        const rails = [8, 26];
+        for (const ry of rails) {
+          if (y === ry && x < 80) return STEEL[4]!;
+          const k = x % 9;
+          if (y > ry && y < ry + 14 && x < 80 && k > 0 && k < 8) {
+            const c = [RED[3]!, BLUE[4]!, YELLOW[3]!, GREEN[4]!, PINK[4]!, CLOTH[3]!, ORANGE[3]!][Math.floor(x / 9 + ry) % 7]!;
+            const yy = y - ry;
+            if (yy < 3 && (k < 2 || k > 6)) continue;
+            return k === 1 ? mix(c, rgb("#ffffff"), 0.3) : k === 7 ? mix(c, SHADOW, 0.3) : yy === 13 ? mix(c, SHADOW, 0.25) : c;
+          }
+        }
+        return rgb("#4a3a44");
+      }
       default:
         return floor ? STEEL[1]! : rgb("#2a2830");
     }
@@ -729,7 +771,7 @@ function shopInterior(kind: ShopKind, seed: number): (x: number, y: number, ih: 
 }
 
 /** ตึกแถว — Thai/Sino shophouse unit, 112 px wide, 2–3 storeys. */
-function shophouse(o: ShophouseOpts): () => RgbaImage {
+export function shophouse(o: ShophouseOpts): () => RgbaImage {
   return () => {
     const w = 112;
     const gf = 72;
@@ -809,9 +851,12 @@ function shophouse(o: ShophouseOpts): () => RgbaImage {
     });
     // ground floor: sign board, shutter drum, opening
     const sign = SHOP_SIGN[o.kind];
-    bevel(img, 8, groundTop + 2, 96, 14, sign.board, 2);
-    hline(img, 9, 102, groundTop + 3, sign.board[4]!);
-    signText(img, sign.key, 56 - Math.ceil(signW(sign.key) / 2), groundTop + 3 + Math.floor((12 - signH(sign.key)) / 2), sign.text, sign.board[0]);
+    // taller words (Sarabun Pixel with tone marks) grow the board upward over the ledge; 12 px words keep the old board
+    const sbH = Math.max(14, signH(sign.key) + 3);
+    const sbY = groundTop + 2 - (sbH - 14);
+    bevel(img, 8, sbY, 96, sbH, sign.board, 2);
+    hline(img, 9, 102, sbY + 1, sign.board[4]!);
+    signText(img, sign.key, 56 - Math.ceil(signW(sign.key) / 2), sbY + 1 + Math.floor((sbH - 2 - signH(sign.key)) / 2), sign.text, sign.board[0]);
     if (o.kind === "pharmacy") for (const px of [18, 94]) { rect(img, px - 1, groundTop + 5, 3, 8, GREEN[5]!); rect(img, px - 4, groundTop + 8, 9, 2, GREEN[5]!); }
     if (o.kind === "coffee") for (const px of [18, 94]) { rect(img, px - 3, groundTop + 6, 6, 5, CLOTH[3]!); setPx(img, px + 3, groundTop + 7, CLOTH[3]!); setPx(img, px + 3, groundTop + 8, CLOTH[3]!); hline(img, px - 4, px + 3, groundTop + 12, CLOTH[2]!); }
     if (o.kind === "gold") for (const px of [18, 94]) for (let k = 0; k < 4; k++) hline(img, px - k, px + k, groundTop + 6 + k, YELLOW[5 - (k >> 1)]!);
@@ -1519,3 +1564,10 @@ export const TOWN_DRAW = {
   templeHill,
   tropicalMid,
 } satisfies Record<string, () => RgbaImage>;
+
+/** Shared painting kit (DSK-8): the primitives of the town set, reused by sampleTownMore.ts so new parts match. */
+export const TOWN_KIT = {
+  hline, vline, bevel, shadeArea, lightArea, wall, ledge, plinth, tinRoof, awning, glassPane, pottedPlant, acUnit, redLantern,
+  ball, ring, line, wheel, grilleWindow, signText,
+  pal: { TEAK, STEEL, CONCRETE, TIN, RUST, RED, CLOTH, YELLOW, GREEN, ORANGE, BLUE, GLASS, GLINT, SHADOW, WARM, TERRA, PINK, BLUE_POT },
+};

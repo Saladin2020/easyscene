@@ -224,16 +224,16 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
     // DSK-6 houses: Thai wooden stilt house, modern house, Malay kampung house, Chinese shophouse, shophouse variants
     id: "houses_street",
     name: "Houses · เรือนไทย บ้านสมัยใหม่ rumah kampung ตึกแถว",
-    width: 52,
+    width: 62,
     layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_tropical"],
     tileset: "tiles_street",
     terrain: { groundHeight: 3 },
     streets: [{ x: 0, gap: 16, items: ["prop_bld_house_thai_wood", "prop_bld_house_modern", "prop_bld_house_kampung", "prop_bld_shophouse_chinese", "prop_bld_shophouse_stationery", "prop_bld_shophouse_clothes"] }],
     props: [
-      { part: "prop_songthaew", x: 120 },
-      { part: "prop_truck_cargo", x: 360 },
+      { part: "prop_songthaew", x: 4 },
       { part: "prop_scooter_teal", x: 640 },
-      { part: "prop_tuktuk", x: 760 },
+      { part: "prop_truck_cargo", x: 752 },
+      { part: "prop_tuktuk", x: 916 },
     ],
   },
   {

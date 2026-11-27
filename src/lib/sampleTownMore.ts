@@ -7,9 +7,14 @@
  * Every vehicle is drawn facing RIGHT (its part has `facing: "right"`).
  */
 import { createImage, type RgbaImage } from "../shared/raster.js";
-import { type Rgb, alphaAt, getPx, hash, markNight, mix, pick, ramp, rect, rgb, selOutline, setPx, sphereLight } from "./pixelArt.js";
+import { type Rgb, alphaAt, bayer, getPx, hash, markNight, mix, pick, ramp, rect, rgb, selOutline, setPx, sphereLight } from "./pixelArt.js";
 import { THAI_SIGNS, type ThaiSignKey } from "./thaiSignText.js";
-import { shadeRamp } from "./sampleTown.js";
+import { TOWN_KIT, shadeRamp, shophouse } from "./sampleTown.js";
+
+const K = TOWN_KIT;
+const GLINT = K.pal.GLINT;
+const CLOTH = K.pal.CLOTH;
+const line = K.line;
 
 const STEEL = ramp("#252a36", "#3e4554", "#5e6878", "#87919f", "#b4bcc6", "#e4e9ee");
 const CONCRETE = ramp("#4c4650", "#6c6468", "#90877f", "#b4aa9a", "#d4cab4", "#eee6d0");
@@ -44,383 +49,626 @@ function bevel(img: RgbaImage, x: number, y: number, w: number, h: number, r: Rg
   vline(img, x + w - 1, y + 1, y + h - 1, r[Math.max(0, body - 1)]!);
 }
 /** Lit wall: vertical gradient + dither, darker to the right. */
-function wall(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], lit = 0.7): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) setPx(img, x, y, pick(pal, lit - ((y - y0) / h) * 0.18 - ((x - x0) / w) * 0.12, x, y, 0.3));
-}
 /** Horizontal wooden planks. */
-function planks(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-    const row = Math.floor((y - y0) / 4);
-    const seam = (y - y0) % 4 === 3;
-    const joint = (x - x0 + row * 13) % 37 === 0;
-    const t = 0.62 + (hash(row, Math.floor((x + row * 13) / 37), seed) - 0.5) * 0.25 - ((x - x0) / w) * 0.1;
-    setPx(img, x, y, seam || joint ? pal[1]! : pick(pal, t, x, y, 0.25));
-  }
-}
-function shadeRect(img: RgbaImage, x0: number, y0: number, w: number, h: number, amount: number): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (alphaAt(img, x, y)) setPx(img, x, y, mix(getPx(img, x, y), SHADOW, amount));
-}
 function signText(img: RgbaImage, key: ThaiSignKey, x: number, y: number, c: Rgb, shadow?: Rgb): void {
   const s = THAI_SIGNS[key];
   const passes: Array<[number, number, Rgb]> = shadow ? [[1, 1, shadow], [0, 0, c]] : [[0, 0, c]];
   for (const [dx, dy, col] of passes) for (let yy = 0; yy < s.height; yy++) for (let xx = 0; xx < s.width; xx++) if (s.rows[yy]![xx] === "#") setPx(img, x + xx + dx, y + yy + dy, col);
 }
-/** Sign board with a centred Thai word; returns its box. */
-function board(img: RgbaImage, key: ThaiSignKey, cx: number, y: number, pal: Rgb[], text: Rgb, padX = 5, padY = 3): { x: number; w: number; h: number } {
-  const s = THAI_SIGNS[key];
-  const w = s.width + padX * 2;
-  const h = s.height + padY * 2;
-  const x = Math.round(cx - w / 2);
-  bevel(img, x, y, w, h, pal, 2);
-  signText(img, key, x + padX, y + padY, text, pal[0]);
-  return { x, w, h };
-}
-/** Window with a frame; lit at night. */
-function win(img: RgbaImage, x: number, y: number, w: number, h: number, frame: Rgb[], bars = 1, curtain?: Rgb): void {
-  bevel(img, x - 1, y - 1, w + 2, h + 2, frame, 3);
-  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(GLASS, 0.7 - yy / (h * 2.2) - (xx / w) * 0.1 + (xx + yy < 4 ? 0.25 : 0), x + xx, y + yy, 0.3));
-  if (curtain) for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < Math.ceil(w / 4); xx++) { setPx(img, x + xx, y + yy, curtain); setPx(img, x + w - 1 - xx, y + yy, mix(curtain, SHADOW, 0.2)); }
-  for (let b = 1; b <= bars; b++) vline(img, x + Math.round((b * w) / (bars + 1)), y, y + h - 1, frame[2]!);
-  markNight(img, "window-lit", () => { for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, getPx(img, x + xx, y + yy)); });
-}
-function door(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[]): void {
-  bevel(img, x - 1, y - 1, w + 2, h + 1, TEAK, 1);
-  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(pal, 0.6 - (xx / w) * 0.25, x + xx, y + yy, 0.3));
-  vline(img, x + Math.floor(w / 2), y, y + h - 1, pal[1]!);
-  setPx(img, x + Math.floor(w / 2) - 2, y + Math.floor(h / 2), YELLOW[4]!);
-}
-/** Gable / pitched roof drawn as a triangle-ish slab from (x0..x1) at baseline y with height h. */
-function pitched(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], overhang = 4, steep = 1): void {
-  const cx = (x0 + x1) / 2;
-  for (let yy = 0; yy < h; yy++) {
-    const half = ((x1 - x0) / 2 + overhang) * ((yy + 1) / h) ** steep;
-    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
-      const t = 0.75 - (yy / h) * 0.15 - ((x - cx) / (x1 - x0)) * 0.35 - (yy % 3 === 2 ? 0.18 : 0);
-      setPx(img, x, y - h + yy, pick(pal, t, x, y - h + yy, 0.3));
-    }
-  }
-  hline(img, Math.round(cx - (x1 - x0) / 2 - overhang), Math.round(cx + (x1 - x0) / 2 + overhang), y, pal[0]!);
-}
-function ground(img: RgbaImage, w: number, h: number, pal = CONCRETE): void {
-  hline(img, 0, w - 1, h - 4, pal[4]!);
-  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, pal[2]!);
-}
-function wheel(img: RgbaImage, cx: number, cy: number, r: number): void {
-  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
-    const d = Math.hypot(x - cx, y - cy);
-    if (d > r + 0.3) continue;
-    setPx(img, x, y, d > r - 2 ? pick(TIRE, 0.5 - (y - cy) / (r * 3), x, y, 0.2) : d < 1.3 ? STEEL[1]! : pick(STEEL, 0.75 - (y - cy) / (r * 2.5), x, y, 0.3));
-  }
-}
-/** Car-ish body: rows of [x0, x1] spans from y0, filled with a ramp and a beltline highlight. */
-function body(img: RgbaImage, spans: Array<[number, number]>, y0: number, pal: Rgb[], belt?: number): void {
-  spans.forEach(([a, b], i) => {
-    const y = y0 + i;
-    for (let x = a; x <= b; x++) setPx(img, x, y, pick(pal, 0.78 - (i / spans.length) * 0.4 - ((x - a) / Math.max(1, b - a)) * 0.08, x, y, 0.3));
-  });
-  if (belt !== undefined) { const [a, b] = spans[belt - y0] ?? [0, -1]; hline(img, a + 1, b - 1, belt, pal[5] ?? pal[pal.length - 1]!); }
-}
-function headlight(img: RgbaImage, x: number, y: number): void {
-  setPx(img, x, y, WARM[4]!);
-  setPx(img, x, y + 1, WARM[3]!);
-  markNight(img, "light", () => { setPx(img, x, y, WARM[4]!); setPx(img, x, y + 1, WARM[4]!); });
-}
-function taillight(img: RgbaImage, x: number, y: number): void {
-  setPx(img, x, y, RED[4]!);
-  setPx(img, x, y + 1, RED[3]!);
-}
 
 // ---------------- vehicles (facing right) ----------------
+// Scale (DSK-8): characters are ~39 px tall and doors 56–64 px, so cars are ~36–40 px tall, buses/lorries ~68 px.
+type Edge = (y: number) => number;
+/** Painted body panel between left(y)..right(y): lit top lip, ramp down, darker sill, slight right-side falloff. */
+function shell(img: RgbaImage, y0: number, y1: number, left: Edge, right: Edge, pal: Rgb[], top = 0.86, bottom = 0.34): void {
+  for (let y = y0; y <= y1; y++) {
+    const a = Math.round(left(y)), b = Math.round(right(y));
+    const v = (y - y0) / Math.max(1, y1 - y0);
+    for (let x = a; x <= b; x++) {
+      let t = top - (top - bottom) * v - ((x - a) / Math.max(1, b - a)) * 0.06;
+      if (y === y0) t = 0.98;
+      if (x === a && y > y0) t += 0.08;
+      setPx(img, x, y, pick(pal, t, x, y, 0.35));
+    }
+  }
+}
+/** Tinted glass between left(y)..right(y): sky gradient, dark top seal, two diagonal glare streaks. */
+function glass(img: RgbaImage, y0: number, y1: number, left: Edge, right: Edge, seed = 0): void {
+  for (let y = y0; y <= y1; y++) {
+    const a = Math.round(left(y)), b = Math.round(right(y));
+    for (let x = a; x <= b; x++) {
+      let c = y === y0 ? GLASS[0]! : pick(GLASS, 0.78 - ((y - y0) / Math.max(1, y1 - y0)) * 0.5 - ((x - a) / Math.max(1, b - a)) * 0.1, x, y, 0.35);
+      const d = (x + (y - y0) * 1.3 + seed) % 23;
+      if (y > y0 && d >= 3 && d < 6) c = mix(c, GLINT, 0.6);
+      else if (y > y0 && d >= 8 && d < 9) c = mix(c, GLINT, 0.35);
+      setPx(img, x, y, c);
+    }
+  }
+}
+/** Dark wheel well cut into the body above the axle. */
+function wheelWell(img: RgbaImage, cx: number, cy: number, r: number): void {
+  for (let y = cy - r - 2; y <= cy; y++) for (let x = cx - r - 2; x <= cx + r + 2; x++) {
+    const d = Math.hypot(x - cx, y - cy);
+    if (d > r + 2.3 || !alphaAt(img, x, y)) continue;
+    setPx(img, x, y, d > r + 1.3 ? mix(getPx(img, x, y), SHADOW, 0.45) : rgb("#16141c"));
+  }
+}
+/** Tyre + alloy rim: tread highlight top-left, lit rim, spokes, hub cap, darker lower-right. */
+function tyre(img: RgbaImage, cx: number, cy: number, r: number, rim: Rgb[] = STEEL): void {
+  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    if (d > r + 0.35) continue;
+    const lit = (-dx - dy) / (r * 2);
+    let c: Rgb;
+    if (d > r - 2.2) c = d > r - 0.8 && lit > 0.12 ? TIRE[3]! : pick(TIRE, 0.45 + lit * 0.8, x, y, 0.2);
+    else if (d > r - 3.2) c = pick(rim, 0.7 + lit, x, y, 0.2);
+    else if (d < 1.5) c = rim[5]!;
+    else {
+      const ang = Math.atan2(dy, dx);
+      const spoke = Math.abs(Math.sin(ang * 2.5)) < 0.32;
+      c = spoke ? pick(rim, 0.62 + lit * 0.8, x, y, 0.2) : rgb("#24222c");
+    }
+    setPx(img, x, y, c);
+  }
+}
+function lamp(img: RgbaImage, x: number, y: number, w: number, h: number): void {
+  rect(img, x, y, w, h, WARM[3]!);
+  hline(img, x, x + w - 1, y, WARM[4]!);
+  setPx(img, x + w - 1, y + h - 1, WARM[1]!);
+  markNight(img, "light", () => rect(img, x, y, w, h, WARM[4]!));
+}
+function tail(img: RgbaImage, x: number, y: number, w: number, h: number): void {
+  rect(img, x, y, w, h, RED[2]!);
+  for (let yy = 0; yy < h - 1; yy++) setPx(img, x, y + yy, RED[4]!);
+}
+function chrome(img: RgbaImage, x0: number, x1: number, y0: number, h: number): void {
+  for (let y = y0; y < y0 + h; y++) hline(img, x0, x1, y, y === y0 ? STEEL[5]! : y === y0 + h - 1 ? STEEL[1]! : STEEL[3]!);
+}
+function seam(img: RgbaImage, x: number, y0: number, y1: number, pal: Rgb[]): void {
+  for (let y = y0; y <= y1; y++) { if (alphaAt(img, x, y)) setPx(img, x, y, pal[1]!); if (alphaAt(img, x + 1, y)) setPx(img, x + 1, y, mix(getPx(img, x + 1, y), WHITE, 0.18)); }
+}
+/** Soft contact shadow along the bottom row between the wheels. */
+function contact(img: RgbaImage, x0: number, x1: number): void {
+  const y = img.height - 1;
+  for (let x = x0; x <= x1; x++) if (!alphaAt(img, x, y)) setPx(img, x, y, SHADOW, 80);
+}
+/** Finish: own-colour outline, then re-stamp lamps so the outline never dims them. */
+function finishVehicle(img: RgbaImage, lamps: () => void, shadow: [number, number]): RgbaImage {
+  selOutline(img, 0.45);
+  lamps();
+  contact(img, shadow[0], shadow[1]);
+  return img;
+}
+const PAINT_WHITE = ramp("#6e7284", "#9498a6", "#b8bcc4", "#d6d8da", "#ecece6", "#fbfaf4");
+const PAINT_RED = shadeRamp("#c4302c");
+const PAINT_TEAL = shadeRamp("#23a092");
+const PAINT_BLUE = shadeRamp("#2f6cc8");
+const PAINT_PINK = shadeRamp("#ec5e98");
+const PAINT_ORANGE = shadeRamp("#ec7a1e");
+const PAINT_GREEN = shadeRamp("#3a8c4e");
+const BOX_GREY = ramp("#4a5060", "#6c7484", "#8e96a4", "#b0b8c2", "#d0d6dc", "#eef2f4");
+
+/** White pickup (96 × 40): cab with windscreen + side window, open bed with crates and a tarp bundle. */
 function pickup(): RgbaImage {
-  const img = createImage(64, 30);
-  const P = WHITEWALL;
-  body(img, [[30, 44], [29, 46], [28, 48]], 6, P);
-  for (let y = 9; y < 23; y++) hline(img, 2, 61 - (y < 13 ? 13 - y : 0), y, pick(P, 0.75 - (y - 9) / 30, 2, y, 0.3));
-  for (let y = 4; y < 9; y++) hline(img, 30 - (y - 4), 46 + (y - 4) * 0.6, y, pick(P, 0.85, 30, y, 0.3));
-  for (let y = 5; y < 9; y++) for (let x = 32; x < 46; x++) if (x - 32 < 13 - (8 - y)) setPx(img, x, y, pick(GLASS, 0.6 - (x - 32) / 40, x, y, 0.3));
-  hline(img, 2, 28, 9, P[5]!);
-  hline(img, 2, 28, 10, P[1]!); // bed rail
-  hline(img, 2, 61, 16, STEEL[3]!);
-  vline(img, 29, 9, 22, P[1]!);
-  vline(img, 44, 9, 20, P[2]!);
-  headlight(img, 61, 13);
-  taillight(img, 2, 12);
-  rect(img, 56, 19, 6, 3, STEEL[4]!);
-  wheel(img, 14, 23, 6);
-  wheel(img, 50, 23, 6);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(96, 40);
+  const P = PAINT_WHITE;
+  // cargo in the bed (behind the side panel)
+  bevel(img, 9, 9, 14, 9, TEAK, 3); vline(img, 16, 10, 16, TEAK[1]!); hline(img, 10, 21, 13, TEAK[2]!);
+  for (let y = 11; y < 18; y++) for (let x = 25; x < 44; x++) if (Math.hypot((x - 34) / 10, (y - 17) / 7) < 1) setPx(img, x, y, pick(TARP, 0.85 - (y - 11) / 12 - (x - 25) / 60, x, y, 0.4));
+  line(img, 26, 15, 42, 13, TARP[0]!);
+  // cab
+  shell(img, 5, 17, (y) => 51 - (y < 7 ? 7 - y : 0), (y) => 67 + (y - 5) * 1.1, P);
+  glass(img, 7, 14, () => 54, (y) => 63 + (y - 7) * 0.5, 2); // side window
+  glass(img, 7, 15, (y) => 66 + (y - 7) * 1.1, (y) => 68 + (y - 7) * 1.1, 0); // windscreen edge
+  vline(img, 65, 7, 16, P[2]!);
+  // lower body (bed + cab + hood)
+  shell(img, 17, 31, (y) => (y === 17 ? 4 : y === 31 ? 4 : 3), (y) => (y === 31 ? 91 : 92), P, 0.82, 0.4);
+  shell(img, 14, 17, () => 79, (y) => 88 + (y - 14), P, 0.95, 0.8); // hood
+  hline(img, 3, 49, 17, P[5]!); hline(img, 5, 47, 18, P[1]!); // bed rail + inner lip
+  hline(img, 4, 91, 22, P[5]!); hline(img, 4, 91, 23, P[2]!); // beltline crease
+  seam(img, 50, 17, 29, P); seam(img, 70, 17, 29, P);
+  hline(img, 64, 67, 20, STEEL[3]!); hline(img, 44, 46, 20, STEEL[3]!);
+  rect(img, 69, 13, 3, 3, P[1]!); setPx(img, 69, 13, P[4]!); // mirror
+  hline(img, 4, 91, 30, P[1]!);
+  wheelWell(img, 20, 32, 7); wheelWell(img, 76, 32, 7);
+  chrome(img, 2, 8, 27, 3); chrome(img, 87, 94, 27, 3);
+  rect(img, 88, 23, 5, 3, STEEL[1]!); for (let x = 88; x < 93; x += 2) setPx(img, x, 24, STEEL[3]!); // grille
+  tyre(img, 20, 32, 7); tyre(img, 76, 32, 7);
+  return finishVehicle(img, () => { lamp(img, 91, 19, 3, 2); tail(img, 3, 19, 2, 3); }, [10, 86]);
 }
+
+/** Blue tuk-tuk (72 × 44): canopy roof with fringe, open bench for passengers, driver cowl and windscreen. */
 function tuktuk(): RgbaImage {
-  const img = createImage(56, 36);
-  // canopy
-  for (let y = 2; y < 8; y++) hline(img, 6 + (y < 4 ? 2 : 0), 46, y, pick(BLUE, 0.78 - (y - 2) / 12, 6, y, 0.3));
-  hline(img, 6, 47, 8, YELLOW[3]!);
-  for (const x of [8, 30, 45]) vline(img, x, 8, 22, STEEL[2]!);
-  // rear passenger tub + cab
-  for (let y = 18; y < 28; y++) hline(img, 4, 40, y, pick(BLUE, 0.7 - (y - 18) / 30, 4, y, 0.3));
-  hline(img, 4, 40, 18, BLUE[5]!);
-  for (let y = 20; y < 26; y++) hline(img, 6, 26, y, pick(RED, 0.55, 6, y, 0.3)); // bench seat
-  hline(img, 4, 40, 23, YELLOW[3]!);
-  // front cowl over the single wheel
-  for (let y = 14; y < 28; y++) { const x1 = 52 - Math.max(0, 16 - y); for (let x = 40; x <= x1; x++) setPx(img, x, y, pick(BLUE, 0.8 - (y - 14) / 30 - (x - 40) / 50, x, y, 0.3)); }
-  for (let y = 9; y < 14; y++) hline(img, 44, 50 - (13 - y), y, pick(GLASS, 0.65, 44, y, 0.3)); // windscreen
-  vline(img, 50, 8, 14, STEEL[3]!);
-  headlight(img, 52, 17);
-  taillight(img, 4, 21);
-  hline(img, 34, 40, 15, STEEL[4]!); // handlebar
-  wheel(img, 12, 29, 5);
-  wheel(img, 46, 29, 5);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(72, 44);
+  const P = PAINT_BLUE;
+  // posts
+  for (const x of [6, 46]) { vline(img, x, 9, 30, STEEL[4]!); vline(img, x + 1, 9, 30, STEEL[2]!); }
+  // bench + interior
+  for (let y = 12; y < 24; y++) hline(img, 8, 45, y, mix(rgb("#2a2238"), P[0]!, 0.3));
+  bevel(img, 10, 14, 26, 9, RED, 3); hline(img, 11, 34, 18, RED[2]!);
+  vline(img, 30, 10, 22, STEEL[3]!); // grab pole
+  // canopy roof
+  shell(img, 2, 8, (y) => 4 - (y > 3 ? 1 : 0) + (y === 2 ? 2 : 0), (y) => 58 + (y === 2 ? -2 : 0), P, 0.95, 0.55);
+  hline(img, 3, 57, 3, P[5]!);
+  for (let x = 3; x <= 58; x++) { const k = x % 6; setPx(img, x, 9, k < 3 ? YELLOW[4]! : WHITE); if (k === 1 || k === 4) setPx(img, x, 10, k < 3 ? YELLOW[2]! : CLOTH[1]!); }
+  // body
+  shell(img, 23, 35, (y) => (y < 25 ? 4 : 3), () => 52, P, 0.8, 0.38);
+  shell(img, 14, 35, (y) => 48 - (y < 16 ? 0 : 0), (y) => Math.min(69, 58 + (y - 14) * 0.8), P, 0.9, 0.36); // driver cowl
+  glass(img, 9, 17, (y) => 54 + (y - 9) * 0.4, (y) => 58 + (y - 9) * 0.5, 1); // windscreen
+  vline(img, 53, 9, 18, STEEL[2]!);
+  hline(img, 4, 68, 27, YELLOW[3]!); hline(img, 4, 68, 28, YELLOW[1]!); // trim stripe
+  for (let x = 8; x < 44; x += 6) setPx(img, x, 31, P[5]!); // rivets
+  hline(img, 50, 56, 20, TIRE[1]!); hline(img, 50, 50, 19, STEEL[4]!); // handlebar
+  rect(img, 6, 33, 10, 2, STEEL[3]!); // step
+  wheelWell(img, 20, 36, 7); wheelWell(img, 60, 36, 7);
+  tyre(img, 20, 36, 7); tyre(img, 60, 36, 7);
+  return finishVehicle(img, () => { lamp(img, 67, 22, 2, 3); tail(img, 3, 25, 2, 3); }, [12, 66]);
 }
+
+/** Teal scooter (48 × 32): rounded rear cowl, dark seat, leg shield, front fender, mirrors. */
 function scooter(): RgbaImage {
-  const img = createImage(40, 28);
-  wheel(img, 8, 22, 5);
-  wheel(img, 32, 22, 5);
-  for (let y = 12; y < 20; y++) for (let x = 4; x < 22; x++) { const dx = (x - 13) / 9, dy = (y - 16) / 4; if (dx * dx + dy * dy <= 1.1) setPx(img, x, y, pick(TEAL, 0.8 - dy * 0.3 - dx * 0.2, x, y, 0.3)); }
-  for (let x = 6; x < 20; x++) { setPx(img, x, 10, rgb("#2a2630")); setPx(img, x, 11, rgb("#1a1820")); }
-  hline(img, 18, 28, 19, STEEL[3]!);
-  for (let y = 6; y < 19; y++) for (let x = 26; x < 30; x++) setPx(img, x - Math.floor((y - 6) * 0.25), y, pick(TEAL, 0.85 - (x - 26) * 0.12, x, y, 0.3));
-  for (let y = 2; y < 6; y++) setPx(img, 27, y, STEEL[2]!);
-  hline(img, 24, 31, 2, STEEL[4]!);
-  headlight(img, 31, 8);
-  taillight(img, 3, 14);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(48, 32);
+  const P = PAINT_TEAL;
+  line(img, 36, 8, 40, 25, STEEL[2]!); line(img, 37, 8, 41, 25, STEEL[4]!); // fork
+  shell(img, 12, 23, (y) => 3 + ((y - 17) ** 2) / 7, (y) => 25 - Math.max(0, y - 20) * 2, P, 0.92, 0.34); // rear cowl
+  for (let y = 19; y < 25; y++) for (let x = 8; x < 19; x++) if (Math.hypot((x - 13) / 6, (y - 22) / 3.2) < 1) setPx(img, x, y, pick(STEEL, 0.75 - (y - 19) / 9 - (x - 8) / 40, x, y, 0.35)); // engine case
+  shell(img, 21, 23, () => 20, () => 34, STEEL, 0.7, 0.3); // floorboard
+  for (let x = 21; x < 34; x += 2) setPx(img, x, 21, STEEL[2]!); // rubber mat
+  shell(img, 7, 22, (y) => 31 + (y - 7) * 0.08, (y) => 35 + (y - 7) * 0.45, P, 0.94, 0.4); // leg shield, raked forward
+  shell(img, 3, 7, () => 32, (y) => 37 + (y > 5 ? 1 : 0), P, 0.98, 0.6); // headset
+  for (let x = 33; x <= 46; x++) { const y = 17 + Math.round(((x - 40) ** 2) / 22); setPx(img, x, y, P[4]!); setPx(img, x, y + 1, P[2]!); } // front fender
+  for (let y = 9; y < 13; y++) { const a = 6 + (y === 9 ? 2 : 0), b = 23 - (y === 9 ? 2 : 0); for (let x = a; x <= b; x++) setPx(img, x, y, y === 9 ? TIRE[3]! : pick(TIRE, 0.6 - (y - 9) * 0.15, x, y, 0.2)); } // seat
+  hline(img, 29, 32, 3, TIRE[1]!); setPx(img, 29, 3, STEEL[4]!); // handlebar grip
+  for (let y = 0; y < 3; y++) setPx(img, 34, y, STEEL[3]!); rect(img, 33, 0, 3, 1, STEEL[4]!); // mirror
+  chrome(img, 2, 13, 24, 2); // exhaust
+  for (let x = 6; x < 23; x++) { setPx(img, x, 17, mix(P[5]!, WHITE, 0.5)); setPx(img, x, 18, P[2]!); } // side stripe
+  bevel(img, 3, 7, 6, 2, STEEL, 3); // rear rack
+  tyre(img, 9, 25, 6); tyre(img, 40, 25, 6);
+  return finishVehicle(img, () => { lamp(img, 38, 4, 2, 3); tail(img, 3, 13, 2, 2); }, [4, 45]);
 }
+
+/** Red songthaew (112 × 52): roof rack, open-sided passenger box with bars and benches, cab, long hood. */
 function songthaew(): RgbaImage {
-  const img = createImage(80, 40);
-  // roof rack + roof
-  for (let y = 4; y < 8; y++) hline(img, 2, 50, y, pick(RED, 0.8 - (y - 4) / 10, 2, y, 0.3));
-  hline(img, 2, 50, 3, STEEL[3]!);
-  for (const x of [4, 18, 32, 48]) vline(img, x, 8, 24, STEEL[3]!);
-  // open rear with two benches
-  for (let y = 8; y < 30; y++) hline(img, 2, 50, y, y < 18 ? mix(pick(RED, 0.5, 2, y, 0.3), SHADOW, 0.55) : pick(RED, 0.72 - (y - 18) / 30, 2, y, 0.3));
-  for (let y = 18; y < 22; y++) hline(img, 6, 46, y, pick(TEAK, 0.6, 6, y, 0.2)); // bench
-  hline(img, 2, 50, 18, RED[5]!);
-  hline(img, 2, 50, 26, YELLOW[3]!);
-  vline(img, 1, 8, 30, STEEL[2]!); // grab bar at the back
-  // cab
-  for (let y = 10; y < 30; y++) { const x1 = 77 - Math.max(0, 14 - y); for (let x = 51; x <= x1; x++) setPx(img, x, y, pick(RED, 0.82 - (y - 10) / 30 - (x - 51) / 70, x, y, 0.3)); }
-  for (let y = 12; y < 18; y++) for (let x = 55; x < 70 - Math.max(0, 14 - y); x++) setPx(img, x, y, pick(GLASS, 0.62 - (x - 55) / 40, x, y, 0.3));
-  vline(img, 62, 12, 28, RED[1]!);
-  hline(img, 51, 77, 22, STEEL[3]!);
-  headlight(img, 77, 18);
-  taillight(img, 2, 22);
-  rect(img, 72, 25, 6, 3, STEEL[4]!);
-  wheel(img, 14, 32, 6);
-  wheel(img, 64, 32, 6);
-  selOutline(img, 0.42);
-  return img;
-}
-function bus(): RgbaImage {
-  const img = createImage(128, 52);
-  const BODY = ORANGE;
-  for (let y = 4; y < 44; y++) { const x1 = 125 - (y < 8 ? 8 - y : 0); for (let x = 2 + (y < 6 ? 6 - y : 0); x <= x1; x++) setPx(img, x, y, y < 28 ? pick(BODY, 0.78 - (y - 4) / 60 - (x / 128) * 0.12, x, y, 0.3) : pick(WHITEWALL, 0.75 - (y - 28) / 40, x, y, 0.3)); }
-  hline(img, 4, 122, 4, BODY[5]!);
-  hline(img, 2, 125, 28, BODY[1]!);
-  hline(img, 2, 125, 36, BODY[3]!);
-  // windows
-  for (let i = 0; i < 6; i++) win(img, 8 + i * 17, 10, 13, 12, STEEL, 0);
-  for (let y = 9; y < 26; y++) for (let x = 112; x < 124 - Math.max(0, 12 - y); x++) setPx(img, x, y, pick(GLASS, 0.65 - (x - 112) / 30, x, y, 0.3)); // windscreen
-  // door
-  for (let y = 12; y < 42; y++) for (let x = 104; x < 110; x++) setPx(img, x, y, x === 107 ? STEEL[2]! : pick(GLASS, 0.55, x, y, 0.3));
-  // route board (no text: blank lit strip)
-  rect(img, 112, 5, 10, 3, INK);
-  markNight(img, "light", () => hline(img, 113, 121, 6, WARM[3]!));
-  headlight(img, 125, 34);
-  taillight(img, 2, 30);
-  rect(img, 2, 42, 124, 2, STEEL[1]!);
-  wheel(img, 24, 44, 7);
-  wheel(img, 98, 44, 7);
-  selOutline(img, 0.42);
-  return img;
-}
-function truck(): RgbaImage {
   const img = createImage(112, 52);
-  // cargo box
-  for (let y = 4; y < 38; y++) for (let x = 2; x < 76; x++) setPx(img, x, y, pick(ZINC, 0.78 - (y - 4) / 80 - ((x - 2) / 74) * 0.1 - ((x - 2) % 8 === 0 ? 0.12 : 0), x, y, 0.3));
-  hline(img, 2, 75, 4, ZINC[5]!);
-  hline(img, 2, 75, 37, ZINC[1]!);
-  for (let x = 8; x < 70; x++) for (let y = 16; y < 24; y++) setPx(img, x, y, pick(GREEN, 0.62 - (y - 16) / 20, x, y, 0.3)); // painted stripe
+  const P = PAINT_RED;
+  // roof rack
+  for (const x of [6, 26, 46, 64]) vline(img, x, 3, 7, STEEL[3]!);
+  hline(img, 4, 66, 3, STEEL[5]!); hline(img, 4, 66, 4, STEEL[2]!);
+  // passenger box roof + open window band
+  shell(img, 7, 11, () => 3, () => 68, P, 0.98, 0.6);
+  hline(img, 3, 68, 12, YELLOW[4]!);
+  for (let y = 13; y < 25; y++) for (let x = 5; x < 66; x++) setPx(img, x, y, mix(rgb("#2a2034"), P[0]!, 0.25 + (y - 13) * 0.02));
+  hline(img, 6, 64, 15, STEEL[4]!); // grab rail
+  for (let x = 8; x < 66; x += 9) { vline(img, x, 13, 24, STEEL[4]!); vline(img, x + 1, 13, 24, STEEL[2]!); }
+  for (let x = 6; x < 64; x++) if ((x >> 2) % 3 !== 2) { setPx(img, x, 23, TEAK[4]!); setPx(img, x, 24, TEAK[2]!); } // bench backs
   // cab
-  for (let y = 12; y < 42; y++) { const x1 = 108 - Math.max(0, 18 - y); for (let x = 78; x <= x1; x++) setPx(img, x, y, pick(GREEN, 0.78 - (y - 12) / 50 - (x - 78) / 90, x, y, 0.3)); }
-  for (let y = 15; y < 25; y++) for (let x = 90; x < 104 - Math.max(0, 18 - y); x++) setPx(img, x, y, pick(GLASS, 0.62 - (x - 90) / 30, x, y, 0.3));
-  vline(img, 88, 14, 40, GREEN[1]!);
-  hline(img, 78, 108, 32, STEEL[3]!);
-  rect(img, 76, 38, 4, 4, STEEL[2]!);
-  headlight(img, 108, 30);
-  taillight(img, 2, 32);
-  rect(img, 2, 38, 74, 3, STEEL[1]!);
-  wheel(img, 16, 44, 7);
-  wheel(img, 34, 44, 7);
-  wheel(img, 96, 44, 7);
-  selOutline(img, 0.42);
-  return img;
+  shell(img, 10, 26, () => 68, (y) => 86 + (y - 10) * 0.75, P);
+  glass(img, 13, 22, () => 71, (y) => 80 + (y - 13) * 0.4, 3);
+  glass(img, 12, 24, (y) => 85 + (y - 12) * 0.75, (y) => 87 + (y - 12) * 0.75, 0);
+  // lower body + hood
+  shell(img, 25, 42, (y) => (y < 27 ? 4 : 3), (y) => (y > 40 ? 106 : 107), P, 0.82, 0.36);
+  shell(img, 22, 26, () => 97, (y) => 104 + (y - 22) * 0.75, P, 0.95, 0.78);
+  hline(img, 3, 106, 28, YELLOW[3]!); hline(img, 3, 106, 29, YELLOW[1]!);
+  seam(img, 69, 25, 40, P); seam(img, 88, 25, 40, P);
+  hline(img, 83, 86, 31, STEEL[4]!);
+  rect(img, 88, 18, 3, 4, P[1]!); setPx(img, 88, 18, P[4]!);
+  rect(img, 3, 38, 12, 3, STEEL[3]!); hline(img, 3, 14, 38, STEEL[5]!); // rear step
+  wheelWell(img, 26, 43, 8); wheelWell(img, 90, 43, 8);
+  chrome(img, 2, 8, 37, 3); chrome(img, 102, 109, 37, 3);
+  tyre(img, 26, 43, 8); tyre(img, 90, 43, 8);
+  return finishVehicle(img, () => { lamp(img, 106, 30, 3, 3); tail(img, 3, 30, 2, 4); }, [12, 104]);
 }
+
+/** Orange city bus (176 × 68): cream upper deck with a window band, orange skirt, two doors, roof AC pod, lit route board. */
+function bus(): RgbaImage {
+  const img = createImage(176, 68);
+  const U = PAINT_WHITE, L = PAINT_ORANGE;
+  shell(img, 2, 5, (y) => 62 + (5 - y), (y) => 112 - (5 - y), BOX_GREY, 0.95, 0.6); // AC pod
+  for (let x = 66; x < 108; x += 4) setPx(img, x, 4, BOX_GREY[1]!);
+  const L0 = (y: number) => 2 + (y < 10 ? 10 - y : 0) * 0.5;
+  const R0 = (y: number) => 173 - (y < 10 ? (10 - y) * 0.7 : 0);
+  shell(img, 6, 33, L0, R0, U, 0.95, 0.62);
+  shell(img, 34, 56, () => 2, () => 173, L, 0.84, 0.38);
+  hline(img, 2, 173, 34, L[1]!); hline(img, 2, 173, 35, L[5]!);
+  hline(img, 2, 173, 44, L[5]!); hline(img, 2, 173, 45, L[2]!);
+  // window band
+  for (let x = 8; x < 140; x += 16) if (x < 88 || x > 106) glass(img, 12, 28, () => x, () => x + 13, x);
+  for (let x = 8; x < 141; x++) { setPx(img, x, 29, U[1]!); setPx(img, x, 11, U[2]!); }
+  // doors
+  for (const dx of [90, 148]) { glass(img, 12, 54, () => dx, () => dx + 13, dx); vline(img, dx + 6, 12, 54, STEEL[2]!); vline(img, dx + 7, 12, 54, STEEL[4]!); bevel(img, dx - 1, 11, 16, 2, STEEL, 3); }
+  // windscreen + route board
+  glass(img, 13, 36, () => 165, (y) => 171, 4);
+  rect(img, 150, 7, 21, 4, rgb("#1c1820"));
+  markNight(img, "light", () => { for (let x = 152; x < 169; x++) if (x % 3) setPx(img, x, 8, ORANGE[4]!); for (let x = 152; x < 169; x++) if ((x + 1) % 4) setPx(img, x, 9, ORANGE[3]!); });
+  for (let y = 40; y < 52; y += 2) hline(img, 6, 18, y, L[1]!); // engine vent
+  rect(img, 163, 47, 9, 3, STEEL[1]!); // grille
+  wheelWell(img, 36, 58, 9); wheelWell(img, 142, 58, 9);
+  chrome(img, 2, 8, 52, 3); chrome(img, 160, 174, 52, 3);
+  hline(img, 2, 173, 56, L[0]!);
+  tyre(img, 36, 58, 9); tyre(img, 142, 58, 9);
+  return finishVehicle(img, () => { lamp(img, 170, 44, 3, 3); tail(img, 3, 40, 2, 5); }, [6, 170]);
+}
+
+/** Lorry (160 × 68): ribbed grey box with a green stripe, tandem rear axle, green cab, exhaust stack, big mirror. */
+function truck(): RgbaImage {
+  const img = createImage(160, 68);
+  const C = PAINT_GREEN;
+  // cargo box with corrugated ribs
+  for (let y = 4; y <= 48; y++) for (let x = 3; x <= 112; x++) {
+    const k = (x - 3) % 6;
+    let t = (k === 0 ? 0.92 : k < 3 ? 0.7 : k < 5 ? 0.55 : 0.32) - ((y - 4) / 44) * 0.2;
+    if (y === 4) t = 1;
+    setPx(img, x, y, pick(BOX_GREY, t, x, y, 0.25));
+  }
+  for (let y = 36; y < 41; y++) hline(img, 3, 112, y, pick(C, y === 36 ? 0.95 : 0.6 - (y - 36) * 0.06, 3, y, 0.2));
+  hline(img, 3, 112, 47, BOX_GREY[1]!); hline(img, 3, 112, 48, BOX_GREY[0]!);
+  vline(img, 5, 6, 46, BOX_GREY[1]!); for (const y of [10, 28, 44]) rect(img, 3, y, 3, 2, STEEL[1]!); // rear hinges
+  // stains running down from the roof
+  for (let x = 4; x < 112; x++) if (hash(x, 3, 77) > 0.8) for (let k = 0; k < 3 + hash(x, 4, 77) * 9; k++) setPx(img, x, 5 + k, mix(getPx(img, x, 5 + k), BOX_GREY[1]!, 0.35));
+  // chassis
+  rect(img, 3, 49, 154, 4, STEEL[0]!); hline(img, 3, 156, 49, STEEL[2]!);
+  // cab
+  vline(img, 114, 1, 34, STEEL[5]!); vline(img, 115, 1, 34, STEEL[2]!); rect(img, 113, 0, 3, 2, STEEL[1]!); // exhaust
+  shell(img, 12, 52, (y) => 117 + (y < 14 ? 14 - y : 0), (y) => Math.min(156, 148 + (y - 12) * 0.5), C);
+  glass(img, 16, 30, () => 121, () => 141, 6);
+  glass(img, 15, 31, (y) => 147 + (y - 15) * 0.5, (y) => 150 + (y - 15) * 0.5, 0);
+  hline(img, 118, 155, 33, C[5]!); hline(img, 118, 155, 34, C[1]!);
+  seam(img, 118, 15, 50, C); seam(img, 144, 15, 50, C);
+  hline(img, 137, 141, 37, STEEL[4]!);
+  vline(img, 156, 16, 24, STEEL[2]!); rect(img, 156, 18, 2, 6, STEEL[1]!); setPx(img, 156, 18, STEEL[4]!); // mirror arm
+  rect(img, 120, 46, 18, 3, STEEL[3]!); hline(img, 120, 137, 46, STEEL[5]!); // step
+  for (let y = 38; y < 46; y += 2) hline(img, 151, 155, y, C[1]!); // grille
+  wheelWell(img, 26, 58, 9); wheelWell(img, 48, 58, 9); wheelWell(img, 134, 58, 9);
+  chrome(img, 148, 158, 52, 3);
+  tyre(img, 26, 58, 9); tyre(img, 48, 58, 9); tyre(img, 134, 58, 9);
+  return finishVehicle(img, () => { lamp(img, 154, 42, 3, 3); tail(img, 3, 41, 2, 5); }, [10, 152]);
+}
+
+/** Pink taxi (88 × 36): sedan with roof sign, two doors, chrome trim. */
 function taxi(): RgbaImage {
-  const img = createImage(60, 28);
-  const P = PINK;
-  for (let y = 4; y < 10; y++) hline(img, 18 - (y - 4), 40 + (y - 4) * 1.5, y, pick(P, 0.85, 18, y, 0.3));
-  for (let y = 5; y < 10; y++) for (let x = 20 - (y - 5); x < 40 + (y - 5); x++) if (x !== 30) setPx(img, x, y, pick(GLASS, 0.6 - (x - 18) / 50, x, y, 0.3));
-  for (let y = 10; y < 21; y++) hline(img, 2 + (y < 12 ? 12 - y : 0), 57 - (y < 12 ? 12 - y : 0), y, pick(P, 0.75 - (y - 10) / 30, 2, y, 0.3));
-  hline(img, 2, 57, 14, P[5]!);
-  vline(img, 30, 10, 19, P[1]!);
-  rect(img, 26, 1, 8, 3, YELLOW[3]!); // roof light
-  markNight(img, "light", () => rect(img, 27, 2, 6, 1, YELLOW[5]!));
-  headlight(img, 57, 13);
-  taillight(img, 2, 13);
-  wheel(img, 13, 21, 6);
-  wheel(img, 47, 21, 6);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(88, 36);
+  const P = PAINT_PINK;
+  bevel(img, 37, 1, 12, 3, YELLOW, 3); // roof sign (lit at night)
+  markNight(img, "light", () => rect(img, 38, 2, 10, 1, YELLOW[5]!));
+  shell(img, 4, 14, (y) => 28 - (y - 4) * 1.4, (y) => 54 + (y - 4) * 2.1, P, 0.95, 0.7);
+  glass(img, 6, 13, (y) => 28 - (y - 6) * 1.3, (y) => 53 + (y - 6) * 2.0, 5);
+  vline(img, 44, 6, 13, P[2]!); vline(img, 45, 6, 13, P[4]!);
+  shell(img, 14, 28, (y) => (y === 14 ? 6 : y === 15 ? 3 : 2), (y) => (y === 14 ? 78 : y === 15 ? 83 : 85), P, 0.84, 0.38);
+  hline(img, 3, 84, 19, P[5]!); hline(img, 3, 84, 20, P[2]!);
+  seam(img, 43, 14, 26, P); seam(img, 63, 14, 26, P);
+  hline(img, 38, 40, 18, STEEL[4]!); hline(img, 58, 60, 18, STEEL[4]!);
+  rect(img, 64, 12, 3, 3, P[1]!); setPx(img, 64, 12, P[4]!);
+  hline(img, 6, 82, 25, STEEL[4]!); // chrome rub strip
+  wheelWell(img, 17, 29, 6); wheelWell(img, 71, 29, 6);
+  chrome(img, 1, 6, 24, 3); chrome(img, 81, 86, 24, 3);
+  tyre(img, 17, 29, 6); tyre(img, 71, 29, 6);
+  return finishVehicle(img, () => { lamp(img, 83, 16, 3, 2); tail(img, 2, 16, 2, 3); }, [8, 80]);
+}
+
+// ---------------- building kit (DSK-8: same primitives as the town set) ----------------
+const { ring, ledge, plinth, glassPane, pottedPlant, acUnit, awning, redLantern, shadeArea, lightArea, tinRoof, ball } = K;
+const renderWall = K.wall;
+const TERRA = K.pal.TERRA;
+const BLUE_POT = K.pal.BLUE_POT;
+const TIN = K.pal.TIN;
+const WALL_CREAM = shadeRamp("#e6d2a2");
+const WALL_WHITE = ramp("#7c8090", "#a2a6b0", "#c4c8cc", "#e0e2e0", "#f2f2ec", "#ffffff");
+
+/** Tiled roof seen from the long side: rows of overlapping tiles (lit lip, dark under-lap), ridge cap, fascia, eave shadow. */
+function tileRoof(img: RgbaImage, x0: number, x1: number, yEave: number, h: number, pal: Rgb[], inset: number, seed: number, fascia: Rgb[] = TEAK): void {
+  for (let y = yEave - h; y <= yEave; y++) {
+    const v = (y - (yEave - h)) / h; // 0 at ridge, 1 at eave
+    const flare = v > 0.82 ? (v - 0.82) * 1.6 : 0; // eaves flare out a little
+    const a = Math.round(x0 + inset * (1 - v) - flare * 6), b = Math.round(x1 - inset * (1 - v) + flare * 6);
+    const row = Math.floor((y - (yEave - h)) / 3), ry = (y - (yEave - h)) % 3;
+    for (let x = a; x <= b; x++) {
+      const col = (x + row * 3) % 6;
+      let t = 0.72 - v * 0.2 - ((x - a) / Math.max(1, b - a)) * 0.12 + (hash(x >> 1, row, seed) - 0.5) * 0.12;
+      if (ry === 0) t += 0.2; else if (ry === 2) t -= 0.3;
+      if (col === 0 && ry > 0) t -= 0.22;
+      if (x === a) t += 0.15;
+      setPx(img, x, y, pick(pal, t, x, y, 0.3));
+    }
+  }
+  const a = x0 + inset, b = x1 - inset;
+  hline(img, a, b, yEave - h, pal[5]!);
+  hline(img, a, b, yEave - h + 1, pal[4]!);
+  // fascia board + eave shadow on whatever is under it
+  const fa = x0 - 5, fb = x1 + 5;
+  hline(img, fa, fb, yEave + 1, fascia[4]!);
+  hline(img, fa, fb, yEave + 2, fascia[2]!);
+  shadeArea(img, fa, yEave + 3, fb - fa + 1, 4, 0.34);
+  shadeArea(img, fa, yEave + 7, fb - fa + 1, 2, 0.28, true);
+}
+/** Thai panel wall (ฝาปะกน): teak stiles + rails framing recessed panels lit top-left. */
+function panelWall(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], cell = 12): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const cx = (x - x0) % cell, cy = (y - y0) % 14;
+    let t: number;
+    if (cx < 2 || cy < 2) t = cx === 0 || cy === 0 ? 0.82 : 0.6; // frame
+    else if (cx === 2 || cy === 2) t = 0.25; // inner shadow
+    else if (cx === cell - 1 || cy === 13) t = 0.72; // lit lower-right lip
+    else t = 0.5 + (hash(Math.floor((x - x0) / cell), Math.floor((y - y0) / 14), 3) - 0.5) * 0.15;
+    t -= ((x - x0) / w) * 0.08;
+    setPx(img, x, y, pick(pal, t, x, y, 0.25));
+  }
+}
+/** Vertical board siding with batten seams and light grain. */
+function boards(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number, step = 5): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const k = (x - x0) % step;
+    let t = 0.62 + (hash(Math.floor((x - x0) / step), 0, seed) - 0.5) * 0.18 - ((y - y0) / h) * 0.12;
+    if (k === 0) t = 0.2; else if (k === 1) t += 0.18;
+    if (hash(x, y >> 2, seed) > 0.93) t -= 0.1;
+    setPx(img, x, y, pick(pal, t, x, y, 0.3));
+  }
+}
+/** Horizontal clapboard / plank siding with shadowed laps. */
+function clapboard(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const row = Math.floor((y - y0) / 4), ry = (y - y0) % 4;
+    let t = 0.6 + (hash(row, Math.floor((x + row * 11) / 29), seed) - 0.5) * 0.2 - ((x - x0) / w) * 0.08;
+    if (ry === 0) t += 0.18; else if (ry === 3) t -= 0.28;
+    if ((x - x0 + row * 11) % 29 === 0) t -= 0.25;
+    setPx(img, x, y, pick(pal, t, x, y, 0.25));
+  }
+}
+/** Brick texture (running bond) with mortar and a few darker bricks. */
+function brick(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], mortar: Rgb, seed: number): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const row = Math.floor((y - y0) / 4), ry = (y - y0) % 4, bx = (x - x0 + (row % 2) * 4) % 8;
+    if (ry === 3 || bx === 0) { setPx(img, x, y, mortar); continue; }
+    let t = 0.55 + (hash(Math.floor((x - x0 + (row % 2) * 4) / 8), row, seed) - 0.5) * 0.35;
+    if (ry === 0) t += 0.15;
+    setPx(img, x, y, pick(pal, t, x, y, 0.3));
+  }
+}
+/** Framed window: lintel hood with shadow, frame, glass with interior (curtains/lamp), mullions, sill. */
+function framedWindow(img: RgbaImage, x: number, y: number, w: number, h: number, frame: Rgb[], o: { panes?: number; curtain?: Rgb; lit?: boolean; hood?: Rgb[]; seed?: number } = {}): void {
+  const seed = o.seed ?? x * 7 + y;
+  if (o.hood) { bevel(img, x - 3, y - 4, w + 6, 3, o.hood, 3); shadeArea(img, x - 2, y - 1, w + 4, 2, 0.3); }
+  bevel(img, x - 2, y - 2, w + 4, h + 4, frame, 3);
+  glassPane(img, x, y, w, h, (xx, yy) => {
+    if (o.curtain && (xx < w * 0.28 || xx > w * 0.72)) { const f = xx % 3; return f === 0 ? mix(o.curtain, SHADOW, 0.3) : f === 1 ? o.curtain : mix(o.curtain, WHITE, 0.3); }
+    return mix(rgb("#2a2238"), WARM[1]!, hash(Math.floor(xx / 6), 1, seed) > 0.6 ? 0.35 : 0.08);
+  }, 0.3, o.lit === false ? "window" : "window-lit");
+  const panes = o.panes ?? 2;
+  for (let i = 1; i < panes; i++) vline(img, x + Math.round((i * w) / panes), y, y + h - 1, frame[4]!);
+  hline(img, x - 3, x + w + 2, y + h + 2, frame[5]!);
+  hline(img, x - 3, x + w + 2, y + h + 3, frame[2]!);
+  shadeArea(img, x - 2, y + h + 4, w + 4, 1, 0.25);
+}
+/** Louvred / panel shutters folded open on both sides of a window. */
+function shutters(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[]): void {
+  for (const sx of [x - 2 - Math.ceil(w / 2), x + w + 2]) {
+    bevel(img, sx, y - 2, Math.ceil(w / 2), h + 4, pal, 3);
+    for (let yy = y; yy < y + h; yy += 2) hline(img, sx + 1, sx + Math.ceil(w / 2) - 2, yy, pal[1]!);
+  }
+}
+/** Panelled timber door in a frame with a step and a brass knob. */
+function panelDoor(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[], frame: Rgb[] = TEAK, double = false): void {
+  bevel(img, x - 2, y - 2, w + 4, h + 2, frame, 2);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    const lx = double ? xx % Math.ceil(w / 2) : xx, pw = double ? Math.ceil(w / 2) : w;
+    const inPanel = lx > 1 && lx < pw - 2 && ((yy > 2 && yy < h * 0.45) || (yy > h * 0.5 && yy < h - 3));
+    let t = 0.58 - (xx / w) * 0.15;
+    if (inPanel) t -= 0.16;
+    if (lx === 1 || yy === 1) t += 0.18;
+    setPx(img, x + xx, y + yy, pick(pal, t, x + xx, y + yy, 0.25));
+  }
+  if (double) vline(img, x + Math.ceil(w / 2) - 1, y, y + h - 1, pal[0]!);
+  setPx(img, x + (double ? Math.ceil(w / 2) - 3 : w - 3), y + Math.floor(h * 0.5), YELLOW[4]!);
+}
+/** Balcony / veranda rail: lit top bar, balusters, bottom bar, cast shadow behind. */
+function rail(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], step = 3): void {
+  shadeArea(img, x0, y + 1, x1 - x0 + 1, h, 0.18, true);
+  hline(img, x0, x1, y, pal[5]!); hline(img, x0, x1, y + 1, pal[2]!);
+  for (let x = x0; x <= x1; x += step) { vline(img, x, y + 2, y + h - 1, pal[3]!); if (x + 1 <= x1) setPx(img, x + 1, y + 2, pal[1]!); }
+  hline(img, x0, x1, y + h, pal[4]!); hline(img, x0, x1, y + h + 1, pal[1]!);
+}
+/** Stainless rooftop water tank on a steel stand. */
+function waterTank(img: RgbaImage, cx: number, baseY: number, r = 7): void {
+  for (const dx of [-r + 2, r - 2]) vline(img, cx + dx, baseY - 4, baseY, STEEL[1]!);
+  hline(img, cx - r + 1, cx + r - 1, baseY - 4, STEEL[3]!);
+  for (let y = baseY - 4 - r * 2; y < baseY - 4; y++) for (let x = cx - r; x <= cx + r; x++) {
+    const u = (x - cx) / r;
+    if (Math.abs(u) > 1) continue;
+    let t = 0.92 - Math.abs(u + 0.35) * 0.7;
+    if ((y - (baseY - 4 - r * 2)) % 5 === 0) t -= 0.25;
+    setPx(img, x, y, pick(STEEL, t, x, y, 0.2));
+  }
+  for (let x = cx - r + 2; x <= cx + r - 2; x++) setPx(img, x, baseY - 5 - r * 2, STEEL[4]!);
+}
+/** Wall lamp: bracket + warm shade, lit at night. */
+function wallLamp(img: RgbaImage, x: number, y: number): void {
+  hline(img, x, x + 2, y, STEEL[1]!);
+  rect(img, x + 1, y + 1, 3, 3, WARM[2]!); setPx(img, x + 1, y + 1, WARM[3]!);
+  markNight(img, "light", () => rect(img, x + 1, y + 1, 3, 3, WARM[4]!));
+}
+/** Sign board with a Thai word; `lit` makes the face glow at night. Returns its box. */
+function signBoard(img: RgbaImage, key: ThaiSignKey, cx: number, y: number, pal: Rgb[], text: Rgb, o: { padX?: number; padY?: number; lit?: boolean; trim?: Rgb } = {}): { x: number; w: number; h: number } {
+  const s = THAI_SIGNS[key];
+  const padX = o.padX ?? 5, padY = o.padY ?? 3;
+  const w = s.width + padX * 2, h = s.height + padY * 2;
+  const x = Math.round(cx - w / 2);
+  bevel(img, x - 1, y - 1, w + 2, h + 2, STEEL, 1);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(pal, 0.68 - yy / (h * 2.4) - (xx / w) * 0.08, x + xx, y + yy, 0.3));
+  hline(img, x, x + w - 1, y, pal[pal.length - 1]!);
+  if (o.trim) { hline(img, x + 1, x + w - 2, y + 1, o.trim); hline(img, x + 1, x + w - 2, y + h - 2, o.trim); }
+  const draw = () => signText(img, key, x + padX, y + padY, text, pal[0]);
+  if (o.lit) markNight(img, "light", draw); else draw();
+  shadeArea(img, x - 1, y + h + 1, w + 2, 2, 0.3);
+  return { x, w, h };
+}
+/** Under-floor shade of a stilt house: dark earth fading downwards, dithered. */
+function underShade(img: RgbaImage, x0: number, x1: number, y0: number, y1: number): void {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const v = (y - y0) / Math.max(1, y1 - y0);
+    if (v > 0.6 && bayer(x, y) < (v - 0.6) * 2.2) continue;
+    setPx(img, x, y, mix(rgb("#3a3036"), rgb("#6a5a50"), v * 0.6 + hash(x, y, 9) * 0.08));
+  }
+}
+function post(img: RgbaImage, x: number, y0: number, y1: number, pal: Rgb[], w = 3): void {
+  for (let y = y0; y <= y1; y++) { setPx(img, x, y, pal[4]!); for (let k = 1; k < w - 1; k++) setPx(img, x + k, y, pal[3]!); setPx(img, x + w - 1, y, pal[1]!); }
+}
+/** Glazed water jar (โอ่ง). */
+function jar(img: RgbaImage, cx: number, baseY: number): void {
+  const J = ramp("#2a1a16", "#4a2c1e", "#6c4028", "#8e5a34", "#b07a48", "#d6a06a");
+  ball(img, cx, baseY - 6, 6, J);
+  hline(img, cx - 3, cx + 3, baseY - 12, J[1]!); hline(img, cx - 3, cx + 3, baseY - 13, J[4]!);
+  hline(img, cx - 3, cx + 3, baseY, J[0]!);
 }
 
 // ---------------- houses ----------------
-/** Thai wooden house on stilts (112 × 112): steep gabled roof, teak plank walls, veranda, stairs, potted plants. */
+/** Thai wooden house on stilts (112 × 112): steep flared tile roof, ฝาปะกน panel walls, open shutters, stair, jar + bench under the floor. */
 function thaiWoodHouse(): RgbaImage {
   const w = 112, h = 112;
   const img = createImage(w, h);
-  // stilts + under-house shade
-  for (let y = 70; y < h - 4; y++) for (let x = 10; x < 100; x++) if (bayerish(x, y)) setPx(img, x, y, mix(CONCRETE[2]!, SHADOW, 0.35));
-  for (const x of [12, 34, 56, 78, 96]) for (let y = 66; y < h - 4; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  // body
-  planks(img, 10, 40, 90, 28, TEAK, 7);
-  hline(img, 8, 102, 68, TEAK[1]!);
-  hline(img, 8, 102, 69, TEAK[4]!);
-  win(img, 22, 46, 12, 12, TEAK, 1);
-  win(img, 70, 46, 12, 12, TEAK, 1);
-  door(img, 46, 46, 14, 22, TEAK);
-  // roof: steep gable with ridge
-  pitched(img, 10, 100, 40, 32, ROOF_TILE, 7, 0.85);
-  for (let y = 10; y < 40; y++) { const k = (y - 8) / 32; const half = 51 * k; setPx(img, Math.round(55 - half * 0.25), y, ROOF_TILE[0]!); }
-  // stairs to the door
-  for (let i = 0; i < 9; i++) hline(img, 40 - i * 3, 46 - i * 3, 70 + i * 4, TEAK[4]!);
-  for (let i = 0; i < 9; i++) setPx(img, 40 - i * 3, 71 + i * 4, TEAK[1]!);
-  // plants
-  for (const px of [4, 104]) { rect(img, px - 2, h - 10, 6, 6, ROOF_TILE[2]!); for (let k = 0; k < 14; k++) setPx(img, px + Math.round(Math.cos(k) * 3), h - 12 - (k % 5), GREEN[2 + (k % 3)]!); }
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  underShade(img, 12, 100, 72, h - 4);
+  for (let x = 22; x < 48; x++) { setPx(img, x, 98, x % 3 ? TEAK[5]! : TEAK[3]!); setPx(img, x, 99, TEAK[2]!); } // bamboo bench (แคร่)
+  for (const x of [23, 46]) vline(img, x, 100, h - 4, TEAK[1]!);
+  jar(img, 70, h - 4);
+  for (const x of [13, 35, 57, 79, 97]) post(img, x, 70, h - 4, TEAK);
+  // floor beam + walls
+  bevel(img, 8, 68, 96, 4, TEAK, 3);
+  panelWall(img, 12, 38, 88, 30, TEAK);
+  for (const wx of [22, 76]) { shutters(img, wx, 45, 12, 14, TEAK); framedWindow(img, wx, 45, 12, 14, TEAK, { panes: 1, curtain: rgb("#e8dcc0") }); }
+  panelDoor(img, 48, 44, 16, 24, TEAK, TEAK, true);
+  wallLamp(img, 66, 42);
+  // roof
+  tileRoof(img, 4, 107, 35, 31, ROOF_TILE, 20, 3);
+  // stair to the door with a hand rail
+  for (let i = 0; i < 10; i++) { const sx = 46 - i * 3, sy = 72 + i * 4; hline(img, sx - 3, sx + 2, sy, TEAK[5]!); hline(img, sx - 3, sx + 2, sy + 1, TEAK[2]!); }
+  line(img, 49, 72, 19, h - 4, TEAK[1]!); line(img, 49, 64, 19, h - 12, TEAK[4]!); line(img, 49, 65, 19, h - 11, TEAK[2]!);
+  pottedPlant(img, 6, h - 4, "leafy", TERRA, 2);
+  pottedPlant(img, 106, h - 4, "flower", TERRA, 5);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
-const bayerish = (x: number, y: number) => ((x + y * 3) & 3) !== 0;
 
-/** Modern house (96 × 96): white cube, flat roof, big windows, carport slab. */
+/** Modern house (96 × 96): white render + vertical timber cladding, flat slab roofs with shadow, glass balcony, carport. */
 function modernHouse(): RgbaImage {
   const w = 96, h = 96;
   const img = createImage(w, h);
-  wall(img, 4, 26, 60, 66, WHITEWALL, 0.8);
-  wall(img, 64, 50, 30, 42, CONCRETE, 0.7);
-  rect(img, 2, 22, 64, 4, STEEL[2]!); // flat roof slab
-  hline(img, 2, 65, 22, STEEL[4]!);
-  rect(img, 62, 46, 34, 4, STEEL[2]!); // carport roof
-  hline(img, 62, 95, 46, STEEL[4]!);
-  vline(img, 93, 50, h - 5, STEEL[3]!);
-  for (let y = 30; y < 50; y++) for (let x = 8; x < 20; x++) setPx(img, x, y, pick(TEAK, 0.65 - ((x - 8) % 3 === 0 ? 0.2 : 0), x, y, 0.2)); // wood slats
-  win(img, 24, 30, 34, 18, STEEL, 2);
-  win(img, 10, 60, 24, 22, STEEL, 1);
-  door(img, 40, 62, 12, 26, TEAK);
-  rect(img, 46, 52, 6, 3, WARM[2]!);
-  markNight(img, "light", () => rect(img, 46, 52, 6, 3, WARM[4]!));
-  // potted tree
-  rect(img, 54, h - 12, 6, 8, CONCRETE[1]!);
-  for (let k = 0; k < 30; k++) setPx(img, 57 + Math.round(Math.cos(k * 1.7) * (2 + (k % 3))), h - 16 - (k % 7), GREEN[2 + (k % 3)]!);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 4, 18, 54, h - 21, WALL_WHITE, 21, [48]);
+  boards(img, 6, 22, 14, 33, TEAK, 4, 3);
+  framedWindow(img, 26, 24, 26, 16, STEEL, { panes: 3, curtain: rgb("#d8d0c4") });
+  rail(img, 23, 56, 41, 6, STEEL, 4); // glass-edge balcony rail
+  ledge(img, 2, 60, 48, WALL_WHITE, 2);
+  // lower right wing: clapboard + carport slab
+  clapboard(img, 58, 52, 35, h - 55, TEAK, 8);
+  glassPane(img, 62, 60, 28, h - 64, (x, y) => (y > h - 72 ? mix(TEAK[2]!, SHADOW, 0.2) : x % 14 === 0 ? STEEL[2]! : mix(rgb("#3a2e30"), WARM[1]!, x > 14 ? 0.4 : 0.1)), 0.3, "window-lit");
+  bevel(img, 61, 59, 30, 1, STEEL, 4);
+  rect(img, 52, 46, 43, 4, WALL_WHITE[3]!); hline(img, 52, 94, 46, WALL_WHITE[5]!); hline(img, 52, 94, 49, WALL_WHITE[1]!);
+  shadeArea(img, 52, 50, 43, 4, 0.32);
+  // roof slab with parapet
+  rect(img, 1, 13, 60, 5, WALL_WHITE[3]!); hline(img, 1, 60, 13, WALL_WHITE[5]!); hline(img, 1, 60, 17, WALL_WHITE[1]!);
+  shadeArea(img, 4, 18, 54, 4, 0.3);
+  waterTank(img, 47, 12, 5);
+  // ground floor
+  framedWindow(img, 9, 58, 18, 18, STEEL, { panes: 2 });
+  panelDoor(img, 34, 62, 12, h - 66, TEAK, STEEL);
+  wallLamp(img, 47, 58);
+  acUnit(img, 32, 26 + 26);
+  pottedPlant(img, 52, h - 4, "snake", CONCRETE, 3);
+  pottedPlant(img, 6, h - 4, "flower", TERRA, 7);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Malay kampung house (112 × 112): stilts, painted wooden walls, tall pitched zinc roof, front steps, louvred windows. */
+/** Malay kampung house (112 × 112): teal board walls, louvred windows with lattice vents, tiled stair, tiled roof with a zig-zag fascia. */
 function kampungHouse(): RgbaImage {
   const w = 112, h = 112;
   const img = createImage(w, h);
-  for (const x of [14, 38, 62, 86, 96]) for (let y = 70; y < h - 4; y++) { setPx(img, x, y, TEAK[2]!); setPx(img, x + 1, y, TEAK[0]!); }
-  planks(img, 12, 42, 88, 28, TEAL, 11);
-  hline(img, 10, 102, 70, TEAK[1]!);
-  hline(img, 10, 102, 71, TEAK[4]!);
-  // louvred windows
-  for (const wx of [20, 72]) { bevel(img, wx - 1, 46, 16, 16, WHITEWALL, 3); for (let y = 47; y < 61; y++) for (let x = wx; x < wx + 14; x++) setPx(img, x, y, (y - 47) % 3 === 2 ? TEAK[1]! : pick(TEAK, 0.7, x, y, 0.2)); markNight(img, "window-lit", () => { for (let y = 47; y < 61; y += 3) hline(img, wx, wx + 13, y + 1, WARM[2]!); }); }
-  door(img, 48, 46, 14, 24, YELLOW);
-  pitched(img, 12, 100, 42, 34, ZINC, 8, 0.9);
-  // decorative fascia board (plain zigzag cut, no script)
-  for (let x = 4; x < 108; x++) setPx(img, x, 43 + ((x >> 1) & 1), WHITEWALL[4]!);
-  // steps
-  for (let i = 0; i < 9; i++) { hline(img, 48 - i * 2, 62 + i * 2, 72 + i * 4, CONCRETE[4]!); hline(img, 48 - i * 2, 62 + i * 2, 73 + i * 4, CONCRETE[2]!); }
-  // hibiscus bush
-  for (let k = 0; k < 40; k++) setPx(img, 100 + Math.round(Math.cos(k * 2.1) * (3 + (k % 4))), h - 8 - (k % 8), k % 9 === 0 ? RED[4]! : GREEN[2 + (k % 3)]!);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  const T = TEAL;
+  underShade(img, 10, 102, 72, h - 4);
+  for (const x of [11, 33, 75, 99]) post(img, x, 70, h - 4, CONCRETE);
+  // tiled front stair (blue-white tiles on the risers)
+  for (let i = 0; i < 9; i++) {
+    const sy = 72 + i * 4, x0 = 47 - (i >> 1), x1 = 63 + (i >> 1);
+    hline(img, x0, x1, sy, CONCRETE[5]!);
+    for (let y = sy + 1; y < sy + 4; y++) for (let x = x0; x <= x1; x++) setPx(img, x, y, y === sy + 3 ? CONCRETE[2]! : ((x >> 2) + (y >> 1)) % 2 ? BLUE_POT[3]! : CLOTH[2]!);
+    shadeArea(img, x0, sy + 1, x1 - x0 + 1, 1, 0.25);
+  }
+  for (const s of [-1, 1]) { const bx = s < 0 ? 45 : 65; for (let y = 66; y < h - 4; y++) { setPx(img, bx + s * Math.round((y - 66) / 8), y, WHITE); if (y % 6 === 0) vline(img, bx + s * Math.round((y - 66) / 8), y, y + 5, CLOTH[1]!); } }
+  bevel(img, 6, 68, 100, 4, TEAK, 3);
+  boards(img, 10, 38, 92, 30, T, 6, 4);
+  hline(img, 10, 101, 38, WHITE); hline(img, 10, 101, 66, WHITE);
+  for (const x of [10, 54, 101]) vline(img, x, 38, 67, WHITE);
+  // louvred windows + lattice vent above
+  for (const wx of [18, 78]) {
+    bevel(img, wx - 2, 41, 20, 4, WALL_WHITE, 3);
+    for (let y = 42; y < 44; y++) for (let x = wx; x < wx + 16; x++) if ((x + y) % 3 === 0) setPx(img, x, y, T[0]!);
+    framedWindow(img, wx, 47, 16, 16, WALL_WHITE, { panes: 2, curtain: rgb("#f0d8a0") });
+    for (let y = 47; y < 63; y += 3) hline(img, wx, wx + 15, y, mix(T[4]!, WHITE, 0.4)); // louvres
+  }
+  panelDoor(img, 46, 44, 18, 24, TEAK, WALL_WHITE, true);
+  // roof + zig-zag fascia (papan cantik)
+  tileRoof(img, 2, 109, 34, 30, TERRA, 18, 8, WALL_WHITE);
+  for (let x = -3; x < w + 3; x++) { const k = x % 6; const d = k < 3 ? k : 6 - k; for (let yy = 0; yy <= d; yy++) setPx(img, x, 37 + yy, yy === d ? WALL_WHITE[2]! : WHITE); }
+  pottedPlant(img, 38, 72, "flower", BLUE_POT, 4);
+  pottedPlant(img, 72, 72, "leafy", BLUE_POT, 9);
+  pottedPlant(img, 104, h - 4, "palm", TERRA, 6);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Chinese shophouse (112 × 160): two storeys, arched shuttered windows, five-foot way, red lanterns, fabric shop below. */
+/** Chinese shophouse ร้านผ้า (112 × 160): tiled roof, cream render with pilasters, arched windows with green shutters, arcade + fabric shop. */
 function chineseShophouse(): RgbaImage {
   const w = 112, h = 160;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#e8c48a");
-  wall(img, 0, 24, w, h - 28, WALL, 0.78);
-  // tiled eave + parapet
-  rect(img, 0, 16, w, 8, ROOF_TILE[2]!);
-  for (let x = 0; x < w; x += 4) vline(img, x, 16, 23, ROOF_TILE[0]!);
-  hline(img, 0, w - 1, 15, ROOF_TILE[4]!);
-  for (let y = 4; y < 15; y++) hline(img, 10, w - 11, y, pick(WALL, 0.85 - (y - 4) / 30, 10, y, 0.3));
-  for (let x = 14; x < w - 14; x += 10) rect(img, x, 7, 6, 5, mix(WALL[2]!, TEAL[3]!, 0.5)); // ventilation tiles (geometric)
-  // upper floor: three arched windows with green shutters
-  for (const wx of [12, 46, 80]) {
-    for (let y = 36; y < 70; y++) for (let x = wx; x < wx + 20; x++) {
-      const dx = x - (wx + 9.5), arch = y < 46 ? Math.sqrt(Math.max(0, 100 - (46 - y) ** 2)) : 99;
-      if (Math.abs(dx) > arch) continue;
-      setPx(img, x, y, Math.abs(dx) < 5 ? pick(GLASS, 0.55 - (y - 36) / 90, x, y, 0.3) : pick(GREEN, 0.6 - (x % 2) * 0.12, x, y, 0.2));
-    }
-    hline(img, wx - 2, wx + 21, 70, WALL[1]!);
-    markNight(img, "window-lit", () => { for (let y = 40; y < 70; y++) for (let x = wx + 5; x < wx + 15; x++) setPx(img, x, y, getPx(img, x, y)); });
+  const C = WALL_CREAM;
+  const SH = shadeRamp("#3f8a62");
+  renderWall(img, 2, 18, 108, h - 21, C, 31, [26, 86]);
+  // pilasters
+  for (const px of [2, 103]) { for (let y = 18; y < h - 3; y++) for (let x = px; x < px + 7; x++) setPx(img, x, y, pick(C, x === px ? 0.95 : x === px + 6 ? 0.35 : 0.66, x, y, 0.3)); bevel(img, px - 1, 22, 9, 3, C, 3); }
+  // upper floor: three arched windows with open green shutters
+  for (const wx of [17, 49, 81]) {
+    for (let y = 30; y < 38; y++) for (let x = wx - 2; x < wx + 16; x++) if (Math.hypot(x - (wx + 6.5), y - 38) < 10.5) setPx(img, x, y, C[2]!);
+    shutters(img, wx, 38, 13, 26, SH);
+    glassPane(img, wx, 30, 14, 34, (x, y) => (y < 8 ? (Math.hypot(x - 6.5, y - 8) > 7.5 ? undefined : (x + y) % 4 === 0 ? WHITE : rgb("#3a3040")) : x < 4 || x > 9 ? rgb("#c8a868") : rgb("#2a2232")), 0.3, "window-lit");
+    for (let y = 30; y < 38; y++) for (let x = wx; x < wx + 14; x++) if (Math.hypot(x - (wx + 6.5), y - 38) > 7.5) setPx(img, x, y, C[3]!);
+    hline(img, wx - 3, wx + 16, 66, C[5]!); hline(img, wx - 3, wx + 16, 67, C[2]!);
   }
-  hline(img, 0, w - 1, 80, WALL[5]!);
-  rect(img, 0, 81, w, 4, WALL[1]!);
-  // five-foot way: columns + shop front with fabric rolls
-  for (let y = 85; y < h - 4; y++) for (let x = 0; x < w; x++) setPx(img, x, y, mix(pick(WALL, 0.5, x, y, 0.3), SHADOW, 0.3));
-  for (const cx of [0, 52, 104]) for (let y = 85; y < h - 4; y++) hline(img, cx, cx + 7, y, pick(WALL, 0.8 - (y - 85) / 200, cx, y, 0.3));
-  board(img, "fabric", 56, 88, RED.slice(1), YELLOW[4]!, 6, 2);
-  for (let i = 0; i < 9; i++) { const pal = [RED, BLUE, GREEN, YELLOW, PINK, TEAL][i % 6]!; for (let y = 108; y < 140; y++) for (let x = 12 + i * 10; x < 19 + i * 10; x++) if (x < 100 && !(x >= 52 && x < 60)) setPx(img, x, y, pick(pal, 0.75 - (x % 7) / 12, x, y, 0.3)); }
-  rect(img, 10, 140, 92, 12, TEAK[2]!);
-  hline(img, 10, 101, 140, TEAK[4]!);
-  // red lanterns (plain)
-  for (const lx of [26, 86]) { vline(img, lx, 85, 89, INK); for (let y = 90; y < 98; y++) for (let x = lx - 4; x <= lx + 4; x++) { const dx = (x - lx) / 4.5, dy = (y - 94) / 4.2; if (dx * dx + dy * dy <= 1) setPx(img, x, y, pick(RED, 0.8 - dx * 0.4 - dy * 0.2, x, y, 0.3)); } hline(img, lx - 2, lx + 2, 89, YELLOW[3]!); hline(img, lx - 2, lx + 2, 98, YELLOW[3]!); markNight(img, "light", () => { for (let y = 91; y < 97; y++) hline(img, lx - 2, lx + 2, y, ORANGE[4]!); }); }
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  rail(img, 9, 102, 72, 7, SH, 3);
+  for (const px of [18, 56, 92]) pottedPlant(img, px, 71, px === 56 ? "flower" : "leafy", TERRA, px);
+  ledge(img, 0, w - 1, 82, C, 3);
+  // roof tiles behind a stepped parapet
+  for (let y = 2; y < 14; y++) for (let x = 6 + (14 - y) >> 1; x < w - 6; x++) { const r = (y - 2) % 3; setPx(img, x, y, pick(ROOF_TILE, (r === 0 ? 0.9 : r === 2 ? 0.3 : 0.62) - (x % 5 === 0 ? 0.2 : 0), x, y, 0.3)); }
+  bevel(img, 0, 13, w, 6, C, 3);
+  ledge(img, 0, w - 1, 18, C, 2);
+  // ground floor: sign, lanterns, arcade opening with fabric bolts
+  signBoard(img, "fabric", w / 2, 88, RED, YELLOW[4]!, { padX: 10, padY: 3, trim: YELLOW[2], lit: false });
+  const ix0 = 12, ix1 = 99, iy0 = 108, iy1 = h - 5;
+  for (let y = iy0; y <= iy1; y++) for (let x = ix0; x <= ix1; x++) {
+    const ly = y - iy0, lx = x - ix0;
+    let c: Rgb = mix(rgb("#3a2c30"), WARM[1]!, Math.max(0, 0.35 - Math.abs(lx - 44) / 120));
+    if (y > iy1 - 3) c = (lx + (ly % 2) * 3) % 6 < 3 ? TEAK[2]! : TEAK[1]!;
+    else if (ly % 12 === 0) c = TEAK[4]!;
+    else if (lx > 6 && lx < 82 && ly < 36) { // shelves of rolled cloth: each bolt is a lit cylinder end
+      const bolt = Math.floor(lx / 5), u = lx % 5;
+      const pal = [RED, BLUE, YELLOW, GREEN, PINK, ORANGE, TEAL, NAVY][Math.floor(hash(bolt, Math.floor(ly / 12), 4) * 8)]!;
+      if (u < 4) c = pick(pal, u === 0 ? 0.85 : u === 3 ? 0.3 : 0.6, x, y, 0.2);
+    } else if (ly >= 36 && lx > 20 && lx < 70) c = ly === 36 ? TEAK[5]! : ly < 40 ? [RED[3]!, YELLOW[3]!, BLUE[3]!, CLOTH[2]!][Math.floor(lx / 6) % 4]! : TEAK[2]!; // counter with folded cloth
+    setPx(img, x, y, c);
+  }
+  markNight(img, "window-lit", () => { for (let y = iy0; y < iy1 - 3; y++) for (let x = ix0; x <= ix1; x++) setPx(img, x, y, getPx(img, x, y)); });
+  shadeArea(img, ix0, iy0, ix1 - ix0 + 1, 5, 0.35);
+  for (const sx of [ix0, ix1 - 6]) for (let x = sx; x < sx + 7; x++) for (let y = iy0; y <= iy1; y++) setPx(img, x, y, pick(TEAK, (x - sx) % 3 === 0 ? 0.3 : 0.62, x, y, 0.2)); // folded shutter boards
+  redLantern(img, 20, 102); redLantern(img, 91, 102);
+  pottedPlant(img, 6, h - 4, "palm", TERRA, 3);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Shophouse variant (112 × 144): two storeys, colored facade, a shop sign and shop goods. */
-function shophouseVariant(facade: string, sign: ThaiSignKey, signPal: Rgb[], goods: "paper" | "clothes"): () => RgbaImage {
-  return () => {
-    const w = 112, h = 144;
-    const img = createImage(w, h);
-    const WALL = shadeRamp(facade);
-    wall(img, 0, 12, w, h - 16, WALL, 0.78);
-    rect(img, 0, 8, w, 6, WALL[1]!);
-    hline(img, 0, w - 1, 8, WALL[5]!);
-    for (const wx of [10, 44, 78]) { win(img, wx, 24, 24, 26, WHITEWALL, 1); for (let x = wx - 2; x < wx + 26; x += 3) vline(img, x, 54, 60, STEEL[3]!); hline(img, wx - 3, wx + 26, 53, STEEL[4]!); hline(img, wx - 3, wx + 26, 61, STEEL[2]!); }
-    rect(img, 0, 66, w, 4, WALL[1]!);
-    hline(img, 0, w - 1, 70, WALL[5]!);
-    board(img, sign, w / 2, 73, signPal, WHITE, 8, 3);
-    // open shop front with goods
-    for (let y = 92; y < h - 4; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(pick(WALL, 0.4, x, y, 0.3), SHADOW, 0.45));
-    markNight(img, "interior", () => { for (let y = 92; y < h - 4; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, getPx(img, x, y)); });
-    if (goods === "paper") {
-      for (const sy of [100, 114, 128]) { hline(img, 10, w - 11, sy, TEAK[4]!); for (let x = 12; x < w - 12; x += 4) { const pal = [BLUE, RED, YELLOW, GREEN, WHITEWALL][(x / 4) % 5 | 0]!; rect(img, x, sy - 8, 3, 8, pal[3]!); setPx(img, x, sy - 8, pal[5]!); } }
-    } else {
-      for (const ry of [98, 118]) { hline(img, 10, w - 11, ry, STEEL[4]!); for (let x = 12; x < w - 16; x += 9) shirt(img, x, ry + 1, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL][(x / 9) % 7 | 0]!); }
-    }
-    rect(img, 0, h - 4, w, 1, CONCRETE[4]!);
-    for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-    selOutline(img, 0.4);
-    return img;
-  };
-}
+/** Thai shophouse variants (112 × 144) drawn by the same painter as the town shophouses: sign, awning-free open front, rail, AC, vents. */
+const shophouseStationery = shophouse({ floors: 2, wallHex: "#8fb4d8", kind: "stationery", shutter: "open", seed: 53 });
+const shophouseClothes = shophouse({ floors: 2, wallHex: "#e3a3b5", kind: "clothes", shutter: "open", seed: 61 });
 
-/** A shirt on a hanger (9 × 12), hanging from y. */
 function shirt(img: RgbaImage, x: number, y: number, pal: Rgb[]): void {
   setPx(img, x + 4, y, STEEL[3]!);
   hline(img, x + 2, x + 6, y + 1, STEEL[3]!);
@@ -430,215 +678,328 @@ function shirt(img: RgbaImage, x: number, y: number, pal: Rgb[]): void {
 }
 
 // ---------------- civic buildings ----------------
+const MINT = shadeRamp("#bfe0d2");
+const STONE = ramp("#4a4448", "#6e666a", "#948a86", "#b8aea4", "#d6ccbe", "#efe8da");
+const MAROON = shadeRamp("#8a2a30");
+/** Flat roof: parapet coping with lit lip, a stain band, and the shadow it casts. */
+function parapet(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], seed: number): void {
+  renderWall(img, x0, y, x1 - x0 + 1, h, pal, seed, [y + 2]);
+  hline(img, x0 - 1, x1 + 1, y, pal[5]!); hline(img, x0 - 1, x1 + 1, y + 1, pal[4]!);
+  hline(img, x0 - 1, x1 + 1, y + h - 1, pal[1]!);
+  shadeArea(img, x0, y + h, x1 - x0 + 1, 2, 0.26);
+}
+/** Plain-stripe flag on a pole (no emblems). */
+function flagPole(img: RgbaImage, x: number, top: number, bottom: number): void {
+  vline(img, x, top, bottom, STEEL[4]!); vline(img, x + 1, top, bottom, STEEL[2]!);
+  ball(img, x + 0.5, top - 1, 1.5, YELLOW);
+  [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!].forEach((c, i) => { for (let k = 0; k < 13; k++) setPx(img, x - 13 + k, top + 2 + i + Math.round(Math.sin(k / 2.2) * 0.8), i === 0 && k % 4 === 0 ? mix(c, WHITE, 0.2) : k > 9 ? mix(c, SHADOW, 0.15) : c); });
+}
+/** Hospital (224 × 144): mint-and-white three-storey block, window ribbons with hoods, lit sign, canopy entrance, rooftop plant. */
 function hospital(): RgbaImage {
   const w = 224, h = 144;
   const img = createImage(w, h);
-  wall(img, 0, 20, w, h - 24, WHITEWALL, 0.85);
-  rect(img, 0, 14, w, 6, GREEN[3]!);
-  hline(img, 0, w - 1, 14, GREEN[5]!);
-  for (let r = 0; r < 3; r++) for (let i = 0; i < 9; i++) if (!(r === 2 && i >= 3 && i <= 5)) win(img, 8 + i * 24, 28 + r * 28, 16, 16, STEEL, 1, r === 1 && i % 2 ? CLOTH() : undefined);
-  hline(img, 0, w - 1, 52, GREEN[4]!);
-  hline(img, 0, w - 1, 80, GREEN[4]!);
-  // green plus (medical, not the protected red cross)
-  // rooftop sign box on two posts
-  vline(img, 104, 11, 13, STEEL[2]!); vline(img, 119, 11, 13, STEEL[2]!);
-  bevel(img, 101, 0, 22, 11, WHITEWALL, 4);
-  rect(img, 106, 4, 12, 3, GREEN[3]!); rect(img, 110, 2, 4, 7, GREEN[3]!);
-  markNight(img, "light", () => { rect(img, 106, 4, 12, 3, GREEN[5]!); rect(img, 110, 2, 4, 7, GREEN[5]!); });
-  board(img, "hospital", w / 2, 86, GREEN.slice(1), WHITE, 8, 3);
-  // entrance canopy + glass doors
-  rect(img, 76, 104, 72, 4, STEEL[2]!);
-  hline(img, 76, 147, 104, STEEL[4]!);
-  for (let y = 108; y < h - 4; y++) for (let x = 86; x < 138; x++) setPx(img, x, y, x === 111 || x === 112 ? STEEL[1]! : pick(GLASS, 0.7 - (y - 108) / 80, x, y, 0.3));
-  markNight(img, "window-lit", () => { for (let y = 108; y < h - 4; y++) for (let x = 86; x < 138; x++) setPx(img, x, y, getPx(img, x, y)); });
-  // emergency entrance sign (green bar + white plus; not the protected red-cross emblem)
-  rect(img, 168, 104, 40, 10, GREEN[2]!);
-  rect(img, 172, 108, 6, 2, WHITE); rect(img, 174, 106, 2, 6, WHITE);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  // rooftop plant room + tank
+  renderWall(img, 150, 4, 44, 12, CONCRETE, 3);
+  for (let x = 154; x < 190; x += 4) vline(img, x, 6, 14, CONCRETE[2]!);
+  waterTank(img, 30, 16, 6);
+  renderWall(img, 4, 18, w - 8, h - 21, WALL_WHITE, 41, [34, 66]);
+  parapet(img, 2, w - 3, 14, 6, MINT, 7);
+  // floors 2–3: window ribbons
+  for (const fy of [26, 58]) {
+    for (let x = 12; x < w - 16; x += 24) if (fy === 26 ? x < 60 || x > 140 : x < 86 || x > 130) framedWindow(img, x, fy, 14, 18, MINT, { panes: 2, hood: MINT, curtain: fy === 26 ? rgb("#cfe6f0") : undefined, seed: x + fy });
+    ledge(img, 2, w - 3, fy + 25, MINT, 2);
+  }
+  // sign + green cross, entrance portico
+  signBoard(img, "hospital", 112, 30, GREEN, WHITE, { padX: 6, padY: 3, lit: true });
+  for (const [cx, cy] of [[96, 58], [128, 58]] as const) { rect(img, cx - 1, cy - 4, 4, 11, GREEN[3]!); rect(img, cx - 4, cy - 1, 10, 4, GREEN[3]!); markNight(img, "light", () => { rect(img, cx, cy - 3, 2, 9, GREEN[5]!); rect(img, cx - 3, cy, 8, 2, GREEN[5]!); }); }
+  glassPane(img, 92, 102, 40, h - 106, (x, y) => (x === 19 || x === 20 ? STEEL[2]! : y > 26 ? CLOTH[1]! : mix(rgb("#dfe8e4"), WARM[2]!, 0.15)), 0.3, "window-lit");
+  rect(img, 80, 90, 64, 5, MINT[3]!); hline(img, 80, 143, 90, MINT[5]!); hline(img, 80, 143, 94, MINT[1]!); // canopy slab
+  shadeArea(img, 82, 95, 60, 6, 0.32);
+  for (const px of [83, 138]) post(img, px, 95, h - 5, WALL_WHITE);
+  for (let x = 12; x < w - 16; x += 24) if (x < 70 || x > 146) framedWindow(img, x, 102, 14, 20, MINT, { panes: 2, seed: x });
+  wallLamp(img, 76, 98); wallLamp(img, 146, 98);
+  for (const px of [74, 152]) pottedPlant(img, px, h - 4, "palm", CONCRETE, px);
+  pottedPlant(img, 10, h - 4, "leafy", TERRA, 2); pottedPlant(img, 214, h - 4, "flower", TERRA, 3);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
-function CLOTH(): Rgb { return rgb("#e8e0d0"); }
 
+/** Police station (160 × 112): hip-roofed two-storey block in cream with maroon trim, navy lit sign, flag, lamp, notice board. */
 function policeStation(): RgbaImage {
   const w = 160, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#d9c7a0");
-  wall(img, 0, 22, w, h - 26, WALL, 0.8);
-  rect(img, 0, 14, w, 8, NAVY[2]!);
-  hline(img, 0, w - 1, 14, NAVY[4]!);
-  board(img, "police", w / 2, 26, NAVY.slice(1), YELLOW[4]!, 8, 3);
-  for (let i = 0; i < 5; i++) if (i !== 2) win(img, 10 + i * 30, 50, 20, 22, NAVY, 1);
-  door(img, 66, 56, 28, 36, GLASS);
-  // blue/red light on the canopy
-  rect(img, 70, 48, 20, 4, STEEL[2]!);
-  rect(img, 74, 44, 5, 4, BLUE[4]!); rect(img, 81, 44, 5, 4, RED[4]!);
-  markNight(img, "light", () => { rect(img, 74, 44, 5, 4, BLUE[5]!); rect(img, 81, 44, 5, 4, RED[5]!); });
-  // flag pole with a plain striped flag
-  vline(img, 150, 30, h - 5, STEEL[4]!);
-  const stripes = [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!];
-  stripes.forEach((c, i) => hline(img, 138, 149, 30 + i, c));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 6, 26, w - 12, h - 29, WALL_CREAM, 13, [60]);
+  tileRoof(img, 4, w - 5, 23, 20, MAROON, 16, 11, WALL_CREAM);
+  for (const x of [16, 40, 104, 128]) framedWindow(img, x, 32, 14, 18, MAROON, { panes: 2, hood: WALL_CREAM, curtain: rgb("#e8e0d0"), seed: x });
+  ledge(img, 4, w - 5, 57, WALL_CREAM, 2);
+  for (const x of [16, 40, 104, 128]) framedWindow(img, x, 70, 14, 20, MAROON, { panes: 2, seed: x + 9 });
+  // entrance bay
+  renderWall(img, 62, 28, 36, h - 31, shadeRamp("#d4c09a"), 19);
+  signBoard(img, "police", 80, 33, NAVY, WHITE, { padX: 4, padY: 3, lit: true });
+  rect(img, 58, 60, 44, 4, MAROON[3]!); hline(img, 58, 101, 60, MAROON[5]!); shadeArea(img, 60, 64, 40, 5, 0.3);
+  panelDoor(img, 70, 72, 20, h - 76, TEAK, MAROON, true);
+  for (const px of [62, 95]) post(img, px, 64, h - 5, WALL_WHITE);
+  wallLamp(img, 66, 66); wallLamp(img, 91, 66);
+  // notice board + flag
+  bevel(img, 108, 96, 16, 11, TEAK, 3); for (const [x, y, c] of [[110, 98, WHITE], [116, 99, YELLOW[4]!], [111, 103, PINK[4]!]] as const) rect(img, x, y, 5, 3, c);
+  flagPole(img, 150, 28, h - 5);
+  pottedPlant(img, 52, h - 4, "snake", CONCRETE, 1); pottedPlant(img, 104, h - 4, "leafy", CONCRETE, 2);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Post office ไปรษณีย์ (128 × 96): red-brick base, cream upper wall, striped awning, red mailbox, lit sign. */
 function postOffice(): RgbaImage {
   const w = 128, h = 96;
   const img = createImage(w, h);
-  wall(img, 0, 22, w, h - 26, WHITEWALL, 0.85);
-  rect(img, 0, 12, w, 10, RED[3]!);
-  hline(img, 0, w - 1, 12, RED[5]!);
-  board(img, "post", w / 2, 26, RED.slice(1), WHITE, 8, 3);
-  win(img, 10, 48, 28, 26, STEEL, 2);
-  win(img, 90, 48, 28, 26, STEEL, 2);
-  door(img, 50, 50, 28, 38, GLASS);
-  // red mailbox
-  rect(img, 116, h - 22, 9, 18, RED[3]!); hline(img, 116, 124, h - 22, RED[5]!); hline(img, 118, 122, h - 17, INK);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 4, 20, w - 8, 40, WALL_CREAM, 17, [30]);
+  brick(img, 4, 60, w - 8, h - 63, shadeRamp("#b4503a"), rgb("#d8c4a8"), 5);
+  parapet(img, 2, w - 3, 14, 7, RED, 3);
+  signBoard(img, "post", w / 2, 24, RED, WHITE, { padX: 8, padY: 3, lit: true, trim: YELLOW[3] });
+  for (const x of [12, 96]) framedWindow(img, x, 26, 18, 18, WALL_WHITE, { panes: 2, curtain: rgb("#f4e4c0"), seed: x });
+  ledge(img, 2, w - 3, 52, WALL_CREAM, 2);
+  awning(img, 8, 56, w - 16, 9, RED, [WHITE, WHITE, WHITE, CLOTH[2]!, WHITE, WHITE].map((c) => c), 8, 4);
+  for (const x of [12, 88]) framedWindow(img, x, 70, 26, 18, WALL_WHITE, { panes: 3, seed: x });
+  glassPane(img, 50, 68, 26, h - 72, (x, y) => (x === 12 || x === 13 ? STEEL[2]! : y > 18 ? STEEL[3]! : mix(rgb("#e8dcc0"), WARM[2]!, 0.2)), 0.3, "window-lit");
+  bevel(img, 48, 66, 30, 2, STEEL, 3);
+  // red mailbox (ตู้ไปรษณีย์) on a post
+  vline(img, 117, h - 12, h - 4, STEEL[1]!);
+  for (let y = h - 28; y < h - 12; y++) for (let x = 112; x < 123; x++) setPx(img, x, y, pick(RED, (y === h - 28 ? 0.95 : 0.72) - (x - 112) / 22, x, y, 0.3));
+  hline(img, 114, 120, h - 24, RED[0]!); rect(img, 114, h - 21, 7, 2, WHITE);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Bank ธนาคาร (128 × 112): stone facade with pilasters, tall glass, lit sign band, ATM with a glowing screen, steps, plants. */
 function bank(): RgbaImage {
   const w = 128, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#c8ccd8");
-  wall(img, 0, 18, w, h - 22, WALL, 0.82);
-  rect(img, 0, 10, w, 8, BLUE[2]!);
-  hline(img, 0, w - 1, 10, BLUE[4]!);
-  // columns
-  for (const cx of [6, 38, 84, 116]) for (let y = 40; y < h - 4; y++) hline(img, cx, cx + 6, y, pick(WHITEWALL, 0.85 - (cx % 7) / 20, cx, y, 0.3));
-  board(img, "bank", w / 2, 22, BLUE.slice(1), YELLOW[4]!, 10, 4);
-  for (let y = 44; y < h - 4; y++) for (let x = 48; x < 80; x++) setPx(img, x, y, x === 63 || x === 64 ? STEEL[1]! : pick(GLASS, 0.7 - (y - 44) / 90, x, y, 0.3));
-  markNight(img, "window-lit", () => { for (let y = 44; y < h - 4; y++) for (let x = 48; x < 80; x++) setPx(img, x, y, getPx(img, x, y)); });
+  const BRAND = shadeRamp("#5a3c9a");
+  renderWall(img, 4, 14, w - 8, h - 17, STONE, 23, [40]);
+  for (let y = 14; y < h - 3; y += 6) hline(img, 4, w - 5, y, STONE[2]!); // stone courses
+  parapet(img, 2, w - 3, 8, 6, STONE, 5);
+  rect(img, 2, 20, w - 4, 16, BRAND[2]!); hline(img, 2, w - 3, 20, BRAND[4]!); hline(img, 2, w - 3, 35, BRAND[0]!);
+  signBoard(img, "bank", w / 2, 22, BRAND, WHITE, { padX: 8, padY: 2, lit: true });
+  shadeArea(img, 4, 36, w - 8, 3, 0.3);
+  // pilasters between tall windows
+  for (const px of [6, 36, 86, 116]) { for (let y = 40; y < h - 4; y++) for (let x = px; x < px + 6; x++) setPx(img, x, y, pick(STONE, x === px ? 0.98 : x === px + 5 ? 0.3 : 0.72, x, y, 0.3)); bevel(img, px - 1, 40, 8, 3, STONE, 4); }
+  for (const x of [16, 96]) { glassPane(img, x, 46, 16, 40, (xx, yy) => (yy % 13 === 0 ? STEEL[3]! : undefined), 0.35, "window-lit"); bevel(img, x - 1, 45, 18, 1, STEEL, 4); }
+  // glass doors
+  glassPane(img, 46, 52, 36, h - 56, (x, y) => (x === 17 || x === 18 ? STEEL[2]! : y > 30 ? STEEL[3]! : mix(rgb("#e0d8ee"), WARM[2]!, 0.15)), 0.32, "window-lit");
+  bevel(img, 44, 48, 40, 4, STONE, 4);
   // ATM
-  bevel(img, 92, 58, 18, 34, STEEL, 3);
-  rect(img, 95, 62, 12, 8, GLASS[4]!);
-  markNight(img, "light", () => rect(img, 95, 62, 12, 8, GLASS[5]!));
-  for (let k = 0; k < 9; k++) setPx(img, 96 + (k % 3) * 2, 74 + Math.floor(k / 3) * 2, STEEL[5]!);
-  win(img, 14, 50, 18, 28, STEEL, 1);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  bevel(img, 18, 90, 12, 16, STEEL, 2); markNight(img, "light", () => rect(img, 20, 92, 8, 5, rgb("#7ad0f0"))); rect(img, 20, 99, 8, 2, STEEL[0]!);
+  for (let i = 0; i < 3; i++) hline(img, 40 - i * 2, 88 + i * 2, h - 6 + i, STONE[5 - i]!);
+  pottedPlant(img, 100, h - 4, "snake", CONCRETE, 6); pottedPlant(img, 110, h - 4, "leafy", CONCRETE, 7);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** District office ที่ว่าการอำเภอ (192 × 112): two-tier tiled roof, cream walls, white-column veranda, central steps, sign, plain-stripe flag. */
 function districtOffice(): RgbaImage {
   const w = 192, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#efe2b8");
-  wall(img, 0, 30, w, h - 34, WALL, 0.82);
-  // hip roof, plain
-  for (let y = 10; y < 30; y++) { const inset = Math.round((30 - y) * 1.2); hline(img, inset - 4, w - 1 - inset + 4, y, pick(ROOF_TILE, 0.75 - (y - 10) / 40 - (y % 3 === 2 ? 0.15 : 0), inset, y, 0.3)); }
-  hline(img, 0, w - 1, 30, ROOF_TILE[0]!);
-  board(img, "district", w / 2, 34, TEAK.slice(1), YELLOW[4]!, 8, 3);
-  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) win(img, 12 + i * 30, 56, 18, 24, TEAK, 1);
-  // porch with steps
-  rect(img, 70, 54, 52, 3, WALL[5]!);
-  for (const cx of [72, 116]) for (let y = 57; y < h - 8; y++) hline(img, cx, cx + 3, y, WALL[4]!);
-  door(img, 84, 62, 24, 40, TEAK);
+  renderWall(img, 8, 36, w - 16, h - 39, WALL_CREAM, 29, [50]);
+  // upper tier + lower tier roofs
+  tileRoof(img, 40, w - 41, 20, 16, ROOF_TILE, 12, 5, WALL_CREAM);
+  renderWall(img, 44, 21, w - 88, 8, WALL_CREAM, 30);
+  tileRoof(img, 6, w - 7, 34, 8, ROOF_TILE, 8, 6, WALL_CREAM);
+  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) framedWindow(img, 16 + i * 30, 50, 16, 22, TEAK, { panes: 2, hood: WALL_CREAM, curtain: rgb("#f0e6cc"), seed: i });
+  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) shutters(img, 16 + i * 30, 50, 16, 22, shadeRamp("#3a6a8a"));
+  // veranda with white columns + rail
+  for (const cx of [12, 44, 140, 172]) post(img, cx, 76, h - 6, WALL_WHITE, 4);
+  rail(img, 10, 70, 88, 8, WALL_WHITE, 4); rail(img, 122, 181, 88, 8, WALL_WHITE, 4);
+  // portico
+  rect(img, 70, 44, 52, 4, WALL_WHITE[3]!); hline(img, 70, 121, 44, WALL_WHITE[5]!); shadeArea(img, 72, 48, 48, 4, 0.3);
+  for (const cx of [72, 116]) post(img, cx, 48, h - 8, WALL_WHITE, 4);
+  signBoard(img, "district", 96, 50, TEAK, YELLOW[4]!, { padX: 4, padY: 2, lit: false, trim: YELLOW[2] });
+  panelDoor(img, 84, 72, 24, h - 80, TEAK, TEAK, true);
   for (let i = 0; i < 3; i++) hline(img, 66 - i * 3, 126 + i * 3, h - 8 + i, CONCRETE[4 - i]!);
-  // flag pole (plain stripes)
-  vline(img, 186, 20, h - 5, STEEL[4]!);
-  [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!].forEach((c, i) => hline(img, 174, 185, 20 + i, c));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  flagPole(img, 186, 14, h - 5);
+  pottedPlant(img, 62, h - 9, "flower", TERRA, 4); pottedPlant(img, 130, h - 9, "flower", TERRA, 8);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Company office บริษัท (128 × 160): stepped glass tower (mullions, spandrels, sky reflections), roof plant + mast, stone podium with lit sign and lobby. */
 function companyOffice(): RgbaImage {
   const w = 128, h = 160;
   const img = createImage(w, h);
-  for (let y = 8; y < h - 4; y++) for (let x = 4; x < w - 4; x++) {
-    const col = (x - 4) % 20, row = (y - 8) % 14;
-    const frame = col < 2 || row < 2;
-    setPx(img, x, y, frame ? pick(STEEL, 0.7 - (x / w) * 0.2, x, y, 0.3) : pick(GLASS, 0.72 - (y / h) * 0.35 - (col + row < 6 ? -0.15 : 0), x, y, 0.3));
-  }
-  markNight(img, "window-lit", () => { for (let y = 8; y < h - 30; y++) for (let x = 4; x < w - 4; x++) { const col = (x - 4) % 20, row = (y - 8) % 14; if (col >= 2 && row >= 2 && hash(Math.floor((x - 4) / 20), Math.floor((y - 8) / 14), 5) < 0.55) setPx(img, x, y, getPx(img, x, y)); } });
-  rect(img, 2, 4, w - 4, 4, STEEL[2]!);
-  hline(img, 2, w - 3, 4, STEEL[4]!);
-  board(img, "company", w / 2, h - 46, NAVY.slice(1), WHITE, 10, 3);
-  for (let y = h - 30; y < h - 4; y++) for (let x = 44; x < 84; x++) setPx(img, x, y, x === 63 || x === 64 ? STEEL[1]! : pick(GLASS, 0.75, x, y, 0.3));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  const CW = ramp("#16243a", "#203650", "#2e4c6c", "#44688a", "#6890ae", "#a0c4da");
+  const curtain = (x0: number, x1: number, y0: number, y1: number) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const col = (x - x0) % 8, row = (y - y0) % 12;
+      let c: Rgb;
+      if (col === 0) c = pick(STEEL, x === x0 ? 0.95 : 0.62, x, y, 0.2); // mullion
+      else if (row < 3) c = row === 0 ? STEEL[4]! : pick(STEEL, 0.32, x, y, 0.2); // spandrel band
+      else {
+        const sky = 0.78 - ((y - y0) / (y1 - y0)) * 0.42 - ((x - x0) / (x1 - x0)) * 0.12;
+        c = pick(CW, sky, x, y, 0.35);
+        const d = (x - x0 + (y - y0) * 0.55) % 46;
+        if (d > 6 && d < 13) c = mix(c, GLINT, 0.38); else if (d > 16 && d < 18) c = mix(c, GLINT, 0.22);
+        if (col === 7) c = mix(c, SHADOW, 0.25);
+      }
+      setPx(img, x, y, c);
+    }
+    markNight(img, "window-lit", () => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const col = (x - x0) % 8, row = (y - y0) % 12; if (col > 0 && row >= 3 && hash(Math.floor((x - x0) / 8), Math.floor((y - y0) / 12), 5) < 0.5) setPx(img, x, y, getPx(img, x, y)); } });
+  };
+  // mast + roof plant
+  vline(img, 64, 0, 12, STEEL[4]!); setPx(img, 64, 0, RED[4]!);
+  renderWall(img, 44, 10, 40, 8, CONCRETE, 9); for (let x = 46; x < 82; x += 3) vline(img, x, 12, 16, CONCRETE[2]!);
+  curtain(28, 99, 20, 48); bevel(img, 26, 18, 76, 3, STEEL, 3);
+  curtain(16, 111, 52, 116); bevel(img, 14, 49, 100, 3, STEEL, 3); shadeArea(img, 16, 52, 96, 2, 0.3);
+  // podium
+  renderWall(img, 4, 120, w - 8, h - 123, STONE, 15, []);
+  bevel(img, 2, 116, w - 4, 4, STONE, 4); shadeArea(img, 4, 120, w - 8, 2, 0.3);
+  signBoard(img, "company", w / 2, 123, NAVY, WHITE, { padX: 8, padY: 2, lit: true });
+  glassPane(img, 38, 140, 52, h - 144, (x, y) => (x % 13 === 0 ? STEEL[2]! : y > 12 ? STEEL[3]! : mix(rgb("#e4e0d8"), WARM[2]!, 0.2)), 0.3, "window-lit");
+  rect(img, 34, 136, 60, 3, STEEL[3]!); hline(img, 34, 93, 136, STEEL[5]!); shadeArea(img, 36, 139, 56, 3, 0.3);
+  for (const px of [14, 114]) pottedPlant(img, px, h - 4, "palm", CONCRETE, px);
+  wallLamp(img, 28, 138); wallLamp(img, 97, 138);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 
 // ---------------- ตลาดนัดมือสอง (flea market) ----------------
-/** Clothes stall (96 × 80): tarp roof, a rail of second-hand shirts at the back, folded clothes on the table (counterTop 50). */
+/** Market canopy: peaked tarp with ribs (lit left slope, shaded right) over a striped scalloped valance with a cast shadow. */
+function canopy(img: RgbaImage, w: number, tarp: Rgb[], stripe: Rgb[]): void {
+  const cx = w / 2;
+  for (let y = 1; y < 9; y++) {
+    const half = 10 + (y - 1) * ((w / 2 - 10) / 7);
+    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+      let t = (x < cx ? 0.82 : 0.48) - (y - 1) * 0.02;
+      if (Math.abs(x - cx) < 1) t = 0.95;
+      if (Math.round(Math.abs(x - cx)) % 12 === 0) t -= 0.18;
+      setPx(img, x, y, pick(tarp, t, x, y, 0.3));
+    }
+  }
+  hline(img, Math.round(cx - 10), Math.round(cx + 10), 1, tarp[5]!);
+  awning(img, 0, 9, w, 9, tarp, stripe, 8, 5);
+}
+function stallPoles(img: RgbaImage, w: number, h: number, pal: Rgb[] = STEEL): void {
+  for (const x of [3, w - 6]) { for (let y = 12; y < h - 3; y++) { setPx(img, x, y, pal[4]!); setPx(img, x + 1, y, pal[3]!); setPx(img, x + 2, y, pal[1]!); } }
+}
+/** Hanging bulb on a flex, lit at night. */
+function bulb(img: RgbaImage, x: number, y0: number, len: number): void {
+  vline(img, x, y0, y0 + len, STEEL[0]!);
+  rect(img, x - 1, y0 + len + 1, 3, 3, WARM[2]!); setPx(img, x - 1, y0 + len + 1, WARM[3]!);
+  markNight(img, "light", () => rect(img, x - 1, y0 + len + 1, 3, 3, WARM[4]!));
+}
+/** Table at counterTop 50 with a draped cloth (vertical folds, darker hem). */
+function stallTable(img: RgbaImage, w: number, h: number, cloth: Rgb[]): void {
+  bevel(img, 5, 50, w - 10, 3, TEAK, 3);
+  for (let y = 53; y < h - 4; y++) for (let x = 6; x < w - 6; x++) {
+    const f = (x + Math.round(Math.sin(y / 3) * 0.6)) % 7;
+    let t = 0.66 - ((y - 53) / (h - 57)) * 0.2 - (f === 0 ? 0.22 : f === 1 ? -0.1 : 0);
+    if (y === h - 5) t = 0.18;
+    setPx(img, x, y, pick(cloth, t, x, y, 0.3));
+  }
+  shadeArea(img, 6, 53, w - 12, 2, 0.3);
+  for (let x = 4; x < w - 4; x++) setPx(img, x, h - 4, SHADOW, 90);
+}
+function ground(img: RgbaImage, w: number, h: number): void {
+  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, y === h - 3 ? CONCRETE[4]! : CONCRETE[2]!);
+  for (let x = 0; x < w; x++) if (hash(x, 2, 17) > 0.86) setPx(img, x, h - 2, CONCRETE[1]!);
+}
+/** Clothes stall (96 × 80): peaked tarp canopy, sign, a rail of second-hand shirts, folded piles on a draped table (counterTop 50). */
 function fleaClothesStall(tarp: Rgb[], seed: number): () => RgbaImage {
   return () => {
     const w = 96, h = 80;
     const img = createImage(w, h);
-    for (const x of [3, w - 5]) for (let y = 10; y < h - 4; y++) { setPx(img, x, y, STEEL[3]!); setPx(img, x + 1, y, STEEL[1]!); }
-    for (let y = 4; y < 14; y++) hline(img, 0, w - 1, y, pick(tarp, 0.8 - (y - 4) / 20 - ((y - 4) % 4 === 3 ? 0.2 : 0), 0, y, 0.3));
-    for (let x = 0; x < w; x += 6) for (let k = 0; k < 3; k++) setPx(img, x + k, 14 + (k === 1 ? 1 : 0), tarp[1]!);
-    board(img, "clothes", w / 2, 16, YELLOW.slice(1), RED[1]!, 5, 2);
-    // rail of shirts behind the seller
-    hline(img, 6, w - 7, 34, STEEL[4]!);
-    for (let i = 0; i < 9; i++) shirt(img, 8 + i * 9, 35, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL, ORANGE][(i + seed) % 8]!);
-    // table with folded clothes + price tags
-    rect(img, 6, 50, w - 12, 4, TEAK[4]!);
-    for (let y = 54; y < h - 4; y++) hline(img, 6, w - 7, y, pick(TARP, 0.5 - (y - 54) / 60, 6, y, 0.3));
-    for (let i = 0; i < 7; i++) { const pal = [BLUE, RED, GREEN, YELLOW, PINK, WHITEWALL, TEAL][(i * 3 + seed) % 7]!; for (let k = 0; k < 3; k++) { rect(img, 10 + i * 11, 47 - k * 2, 9, 2, pal[3 - (k % 2)]!); hline(img, 10 + i * 11, 18 + i * 11, 47 - k * 2, pal[5]!); } }
-    board(img, "sale", 70, 58, RED.slice(1), WHITE, 3, 2);
-    hline(img, 0, w - 1, h - 4, CONCRETE[4]!);
-    for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-    selOutline(img, 0.4);
+    for (let y = 18; y < 50; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(rgb("#3a3040"), tarp[0]!, 0.3 + (y - 18) / 120)); // shade inside the stall
+    stallPoles(img, w, h);
+    hline(img, 6, w - 7, 28, STEEL[5]!); hline(img, 6, w - 7, 29, STEEL[2]!);
+    for (let i = 0; i < 9; i++) shirt(img, 7 + i * 9, 29, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL, ORANGE][(i + seed) % 8]!);
+    canopy(img, w, tarp, CLOTH.concat([WHITE, WHITE]));
+    bulb(img, 26, 18, 3); bulb(img, 70, 18, 3);
+    stallTable(img, w, h, seed % 2 ? shadeRamp("#d8c8a8") : shadeRamp("#7fb0d0"));
+    for (let i = 0; i < 7; i++) {
+      const pal = [BLUE, RED, GREEN, YELLOW, PINK, WHITEWALL, TEAL][(i * 3 + seed) % 7]!;
+      const n = 2 + ((i + seed) % 3);
+      for (let k = 0; k < n; k++) { const y = 48 - k * 2; rect(img, 9 + i * 11, y, 9, 2, pal[3]!); hline(img, 9 + i * 11, 17 + i * 11, y, pal[5]!); setPx(img, 17 + i * 11, y + 1, pal[1]!); }
+    }
+    signBoard(img, "clothes", 25, 55, YELLOW, RED[1]!, { padX: 2, padY: 0 });
+    signBoard(img, "sale", 71, 59, RED, WHITE, { padX: 2, padY: 1 });
+    ground(img, w, h);
+    selOutline(img, 0.42);
     return img;
   };
 }
-/** Second-hand goods stall (96 × 80): radios, lamps, shoes, a kettle, books on a mat table (counterTop 50). */
+/** Second-hand goods stall (96 × 80): radios, a fan, a clock and lamps on a shelf; shoes, kettle, camera, books on the table (counterTop 50). */
 function fleaJunkStall(): RgbaImage {
   const w = 96, h = 80;
   const img = createImage(w, h);
-  for (const x of [3, w - 5]) for (let y = 10; y < h - 4; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  for (let y = 4; y < 14; y++) hline(img, 0, w - 1, y, pick(GREEN, 0.75 - (y - 4) / 20 - ((y >> 1) & 1) * 0.12, 0, y, 0.3));
-  board(img, "flea", w / 2, 16, ORANGE.slice(1), WHITE, 4, 2);
-  // shelf behind: radios + lamps
-  hline(img, 8, w - 9, 40, TEAK[4]!);
-  for (let i = 0; i < 4; i++) { bevel(img, 10 + i * 20, 30, 14, 10, [STEEL, TEAK, RED, BLUE][i]!, 2); setPx(img, 14 + i * 20, 34, STEEL[5]!); setPx(img, 20 + i * 20, 33, STEEL[0]!); }
-  // table goods
-  rect(img, 6, 50, w - 12, 4, TEAK[4]!);
-  for (let y = 54; y < h - 4; y++) hline(img, 6, w - 7, y, pick(TEAK, 0.45 - (y - 54) / 70, 6, y, 0.3));
-  for (let i = 0; i < 3; i++) { rect(img, 10 + i * 9, 46, 7, 4, [RED, BLUE, TEAK][i]![3]!); hline(img, 10 + i * 9, 16 + i * 9, 46, [RED, BLUE, TEAK][i]![5]!); } // shoes
-  for (let y = 42; y < 50; y++) for (let x = 42; x < 52; x++) { const d = Math.hypot(x - 47, y - 46); if (d < 4.5) setPx(img, x, y, pick(STEEL, sphereLight(x - 47, y - 46, 5), x, y, 0.3)); } // kettle
-  hline(img, 51, 54, 44, STEEL[3]!);
-  for (let i = 0; i < 4; i++) rect(img, 62 + i * 6, 42 + (i % 2), 5, 8 - (i % 2), [YELLOW, GREEN, RED, BLUE][i]![3]!); // books
-  hline(img, 0, w - 1, h - 4, CONCRETE[4]!);
-  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-  selOutline(img, 0.4);
+  for (let y = 18; y < 50; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(rgb("#34302a"), GREEN[0]!, 0.3 + (y - 18) / 120));
+  stallPoles(img, w, h, TEAK);
+  // shelf with radios, a fan, a clock, a lamp
+  bevel(img, 8, 40, w - 16, 3, TEAK, 3); shadeArea(img, 8, 43, w - 16, 2, 0.3);
+  for (let i = 0; i < 3; i++) { const x = 10 + i * 17, pal = [STEEL, TEAK, RED][i]!; bevel(img, x, 30, 14, 10, pal, 2); for (let k = 0; k < 4; k++) ring(img, x + 4, 35, 2, 2, pal[1]!); setPx(img, x + 4, 35, pal[0]!); for (let y = 32; y < 38; y += 2) hline(img, x + 8, x + 12, y, pal[4]!); vline(img, x + 12, 26, 30, STEEL[3]!); }
+  ring(img, 68, 33, 5, 5, STEEL[4]!); ring(img, 68, 33, 3, 3, STEEL[2]!); setPx(img, 68, 33, STEEL[5]!); vline(img, 68, 38, 40, STEEL[1]!); // desk fan
+  ball(img, 81, 34, 4, CLOTH.concat([WHITE])); line(img, 81, 34, 81, 31, INK); line(img, 81, 34, 83, 35, INK); // clock
+  canopy(img, w, GREEN, YELLOW);
+  bulb(img, 48, 18, 3);
+  stallTable(img, w, h, TARP);
+  signBoard(img, "flea", w / 2, 57, ORANGE, WHITE, { padX: 2, padY: 1 });
+  for (let i = 0; i < 3; i++) { const pal = [RED, BLUE, TEAK][i]!; const x = 9 + i * 9; for (let y = 45; y < 50; y++) hline(img, x + (y < 47 ? 3 : 0), x + 6, y, pick(pal, 0.7 - (y - 45) * 0.08, x, y, 0.3)); hline(img, x, x + 6, 49, INK); } // shoes
+  ball(img, 44, 45, 4, STEEL); hline(img, 48, 51, 43, STEEL[3]!); hline(img, 41, 47, 40, STEEL[1]!); // kettle
+  bevel(img, 54, 43, 9, 7, TIRE, 2); ring(img, 58, 46, 2, 2, STEEL[4]!); setPx(img, 58, 46, GLASS[4]!); // camera
+  for (let i = 0; i < 4; i++) bevel(img, 66 + i * 6, 41 + (i % 2), 5, 9 - (i % 2), [YELLOW, GREEN, RED, BLUE][i]!, 3); // books
+  ground(img, w, h);
+  selOutline(img, 0.42);
   return img;
 }
-/** Free-standing clothes rack (48 × 48). */
+/** Rolling clothes rack (48 × 48): chrome frame on casters, mixed shirts and a dress, a price tag. */
 function clothesRack(): RgbaImage {
   const img = createImage(48, 48);
-  vline(img, 3, 8, 44, STEEL[3]!); vline(img, 44, 8, 44, STEEL[3]!);
-  hline(img, 3, 44, 8, STEEL[4]!);
-  hline(img, 0, 7, 45, STEEL[2]!); hline(img, 40, 47, 45, STEEL[2]!);
-  for (let i = 0; i < 4; i++) shirt(img, 5 + i * 10, 9, [TEAL, YELLOW, RED, BLUE][i]!);
-  selOutline(img, 0.4);
+  for (const x of [4, 42]) { vline(img, x, 6, 42, STEEL[4]!); vline(img, x + 1, 6, 42, STEEL[2]!); }
+  hline(img, 3, 44, 6, STEEL[5]!); hline(img, 3, 44, 7, STEEL[2]!);
+  hline(img, 1, 10, 42, STEEL[3]!); hline(img, 37, 46, 42, STEEL[3]!);
+  for (const x of [2, 9, 38, 45]) { ball(img, x, 45, 1.6, TIRE); }
+  for (let i = 0; i < 4; i++) shirt(img, 6 + i * 9, 7, [TEAL, YELLOW, RED, BLUE][i]!);
+  // a long dress at the end
+  for (let y = 9; y < 36; y++) { const half = y < 12 ? 2 : 2 + Math.floor((y - 12) / 6); for (let dx = -half; dx <= half; dx++) setPx(img, 39 + dx - 4 + 4, y, pick(PINK, 0.75 - (dx + half) / (half * 4) - (dx % 2 ? 0.08 : 0), 39 + dx, y, 0.3)); }
+  setPx(img, 39, 8, STEEL[4]!);
+  bevel(img, 22, 26, 6, 4, WHITEWALL, 3); setPx(img, 23, 27, RED[3]!); setPx(img, 25, 27, RED[3]!); // price tag
+  selOutline(img, 0.42);
   return img;
 }
-/** Market entrance banner on two tall poles (160 × 64): "ตลาดนัดมือสอง". */
+/** Market entrance arch (160 × 64): two posts, a peaked banner "ตลาดนัดมือสอง", bunting and a string of bulbs. */
 function fleaBanner(): RgbaImage {
   const w = 160, h = 64;
   const img = createImage(w, h);
-  for (const x of [2, w - 4]) for (let y = 0; y < h; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  for (let y = 4; y < 22; y++) hline(img, 6, w - 7, y, pick(ORANGE, 0.7 - (y - 4) / 40, 6, y, 0.3));
-  hline(img, 6, w - 7, 4, ORANGE[5]!);
-  hline(img, 6, w - 7, 21, ORANGE[1]!);
-  signText(img, "flea", Math.round(w / 2 - THAI_SIGNS.flea.width / 2), 8, WHITE, ORANGE[0]);
-  for (let x = 8; x < w - 8; x += 8) { setPx(img, x, 23, [RED, YELLOW, GREEN, BLUE][(x / 8) % 4 | 0]![4]!); setPx(img, x + 1, 24, [RED, YELLOW, GREEN, BLUE][(x / 8) % 4 | 0]![3]!); }
-  selOutline(img, 0.4);
+  for (const x of [3, w - 8]) { for (let y = 4; y < h; y++) for (let k = 0; k < 5; k++) setPx(img, x + k, y, pick(TEAK, k === 0 ? 0.92 : k === 4 ? 0.25 : 0.62 - (y % 9 === 0 ? 0.15 : 0), x + k, y, 0.25)); bevel(img, x - 1, 2, 7, 3, TEAK, 4); }
+  // peaked banner board
+  for (let y = 4; y < 26; y++) {
+    const peak = Math.max(0, 6 - y) * 6;
+    for (let x = 10 + peak; x < w - 10 - peak; x++) setPx(img, x, y, pick(ORANGE, (y < 7 ? 0.95 : 0.72) - ((y - 4) / 22) * 0.3 - ((x - 10) / (w - 20)) * 0.08, x, y, 0.3));
+  }
+  for (let x = 10; x < w - 10; x++) { setPx(img, x, 23, YELLOW[4]!); setPx(img, x, 25, ORANGE[0]!); }
+  signText(img, "flea", Math.round(w / 2 - THAI_SIGNS.flea.width / 2), 14 - Math.floor(THAI_SIGNS.flea.height / 2), WHITE, ORANGE[0]);
+  shadeArea(img, 10, 26, w - 20, 0, 0.3);
+  // bunting
+  for (let i = 0; i < 18; i++) {
+    const x0 = 12 + i * 8, sag = Math.round(Math.sin((i / 17) * Math.PI) * 4);
+    const pal = [RED, YELLOW, GREEN, BLUE, PINK][i % 5]!;
+    hline(img, x0, x0 + 7, 28 + sag, STEEL[1]!);
+    for (let k = 0; k < 4; k++) hline(img, x0 + 1 + k, x0 + 6 - k, 29 + sag + k, k === 0 ? pal[4]! : pal[3]!);
+  }
+  // string of bulbs
+  for (let x = 9; x < w - 9; x++) { const y = 38 + Math.round(Math.sin(((x - 9) / (w - 18)) * Math.PI) * 6); setPx(img, x, y, STEEL[0]!); if ((x - 9) % 10 === 5) { setPx(img, x, y + 1, WARM[2]!); markNight(img, "light", () => { setPx(img, x, y + 1, WARM[4]!); setPx(img, x, y + 2, WARM[3]!); }); } }
+  pottedPlant(img, 15, h - 1, "leafy", TERRA, 3); pottedPlant(img, w - 16, h - 1, "flower", TERRA, 6);
+  selOutline(img, 0.42);
   return img;
 }
 
 export const TOWN_MORE_DRAW = {
   pickup, tuktuk, scooter, songthaew, bus, truck, taxi,
   thaiWoodHouse, modernHouse, kampungHouse, chineseShophouse,
-  shophouseStationery: shophouseVariant("#8fb4d8", "stationery", BLUE.slice(1), "paper"),
-  shophouseClothes: shophouseVariant("#e3a3b5", "clothes", PINK.slice(1), "clothes"),
+  shophouseStationery, shophouseClothes,
   hospital, policeStation, postOffice, bank, districtOffice, companyOffice,
   fleaClothesA: fleaClothesStall(TARP, 0), fleaClothesB: fleaClothesStall(RED, 3), fleaJunk: fleaJunkStall, clothesRack, fleaBanner,
 };

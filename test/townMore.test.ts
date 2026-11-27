@@ -62,6 +62,37 @@ describe("DSK-6 asset set", () => {
     }
   });
 
+  it("DSK-8 polish: shaded ramps (many tones per part) and an own-colour outline, not flat fills", () => {
+    for (const d of defs) {
+      const img = d.draw();
+      const id = d.meta.id;
+      const tones = new Set<number>();
+      for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3] === 255) tones.add((img.data[i]! << 16) | (img.data[i + 1]! << 8) | img.data[i + 2]!);
+      expect(tones.size, id).toBeGreaterThan(VEHICLES.includes(id) ? (id === "prop_scooter_teal" ? 30 : 45) : FLEA.includes(id) ? 55 : 85); // DSK-6 had 22–53
+      // silhouette edge pixels (opaque next to transparent, ignoring the ground row) are darker than the part's mean
+      let edge = 0, edgeLum = 0, all = 0, allLum = 0;
+      const lum = (i: number) => img.data[i]! * 0.3 + img.data[i + 1]! * 0.59 + img.data[i + 2]! * 0.11;
+      for (let y = 0; y < img.height - 4; y++) for (let x = 0; x < img.width; x++) {
+        const i = (y * img.width + x) * 4;
+        if (img.data[i + 3] !== 255) continue;
+        all++; allLum += lum(i);
+        const open = [[1, 0], [-1, 0], [0, -1]].some(([dx, dy]) => { const nx = x + dx!, ny = y + dy!; return nx < 0 || ny < 0 || nx >= img.width || img.data[(ny * img.width + nx) * 4 + 3] === 0; });
+        if (open) { edge++; edgeLum += lum(i); }
+      }
+      // full-bleed terrace facades (the town shophouse painter) tile wall-to-wall and carry lit pilasters instead
+      if (!id.startsWith("prop_bld_shophouse_") || id === "prop_bld_shophouse_chinese") expect(edgeLum / edge, id).toBeLessThan((allLum / all) * 0.75);
+    }
+  });
+
+  it("DSK-8 scale: vehicles read right next to a 48 px character (~39 px tall) and 56-64 px doors", () => {
+    const h = (id: string) => meta(id).height;
+    for (const id of ["prop_car_pickup", "prop_car_taxi"]) expect(h(id), id).toBeGreaterThanOrEqual(34);
+    expect(h("prop_scooter_teal")).toBeGreaterThanOrEqual(30);
+    expect(h("prop_tuktuk")).toBeGreaterThanOrEqual(40);
+    expect(h("prop_songthaew")).toBeGreaterThanOrEqual(48);
+    for (const id of ["prop_bus_city", "prop_truck_cargo"]) expect(h(id), id).toBeGreaterThanOrEqual(64);
+  });
+
   it("signs are Thai words in Thai script", () => {
     for (const k of ["hospital", "police", "post", "bank", "district", "company", "flea", "clothes", "fabric", "stationery"] as const) {
       expect(THAI_SIGNS[k].text, k).toMatch(/^[\u0E00-\u0E7F ]+$/);

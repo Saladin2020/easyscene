@@ -1208,13 +1208,13 @@ function townMoreDefs(): SampleDef[] {
     return { ...d, meta: { ...(d.meta as PropPart), shop: { counterTop: 50, seller: { x: 48, y: 72 } } } };
   };
   return [
-    car("prop_car_pickup", "Pickup truck (white)", 64, 30, "#e2e4e4", ["car", "pickup"], M.pickup),
-    car("prop_tuktuk", "Tuk-tuk (ตุ๊กตุ๊ก)", 56, 36, "#4064b4", ["tuktuk", "taxi"], M.tuktuk),
-    car("prop_scooter_teal", "Scooter (teal)", 40, 28, "#2a9a8e", ["scooter", "motorbike"], M.scooter),
-    car("prop_songthaew", "Songthaew (สองแถว)", 80, 40, "#cc3a34", ["songthaew", "bus"], M.songthaew),
-    car("prop_bus_city", "City bus", 128, 52, "#f6923a", ["bus"], M.bus),
-    car("prop_truck_cargo", "Cargo truck", 112, 52, "#2e8c52", ["truck"], M.truck),
-    car("prop_car_taxi", "Taxi (pink)", 60, 28, "#e0608a", ["car", "taxi"], M.taxi),
+    car("prop_car_pickup", "Pickup truck (white)", 96, 40, "#e2e4e4", ["car", "pickup"], M.pickup),
+    car("prop_tuktuk", "Tuk-tuk (ตุ๊กตุ๊ก)", 72, 44, "#4064b4", ["tuktuk", "taxi"], M.tuktuk),
+    car("prop_scooter_teal", "Scooter (teal)", 48, 32, "#2a9a8e", ["scooter", "motorbike"], M.scooter),
+    car("prop_songthaew", "Songthaew (สองแถว)", 112, 52, "#cc3a34", ["songthaew", "bus"], M.songthaew),
+    car("prop_bus_city", "City bus", 176, 68, "#f6923a", ["bus"], M.bus),
+    car("prop_truck_cargo", "Cargo truck", 160, 68, "#2e8c52", ["truck"], M.truck),
+    car("prop_car_taxi", "Taxi (pink)", 88, 36, "#e0608a", ["car", "taxi"], M.taxi),
     building("prop_bld_house_thai_wood", "Thai wooden house on stilts (เรือนไทย)", 112, 112, "#8c5630", ["house", "wood", "dsk6"], M.thaiWoodHouse),
     building("prop_bld_house_modern", "Modern house", 96, 96, "#e2e4e4", ["house", "modern", "dsk6"], M.modernHouse),
     building("prop_bld_house_kampung", "Malay kampung house (rumah kampung)", 112, 112, "#2a9a8e", ["house", "kampung", "multicultural", "dsk6"], M.kampungHouse),

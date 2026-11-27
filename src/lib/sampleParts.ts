@@ -17,7 +17,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import { ATLAS_COLUMNS, ATLAS_ROWS, MASK_E, MASK_N, MASK_S, MASK_W } from "../shared/tiles.js";
-import type { BackgroundPart, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, ShopPartMeta, TilesetPart } from "../shared/types.js";
+import type { BackgroundPart, Facing, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, ShopPartMeta, TilesetPart } from "../shared/types.js";
 import { decodePng, writePng } from "./png.js";
 import { NIGHT_MASK_FILE } from "../shared/night.js";
 import { TOWN_DRAW } from "./sampleTown.js";
@@ -1139,6 +1139,9 @@ const building = (id: string, name: string, w: number, h: number, recolorBase: s
 const brickBuilding = (id: string, name: string, w: number, h: number, recolorBase: string, tags: string[], draw: () => RgbaImage) =>
   prop(id, name, w, h, "back", recolorBase, ["building", "brick-town", ...tags], draw, undefined, "building");
 
+/** Mark a vehicle part's nose direction (as drawn). */
+const faced = (def: SampleDef, facing: Facing): SampleDef => ({ ...def, meta: { ...(def.meta as PropPart), facing } });
+
 /** Point each open shop at its closed twin (`shop.closed`) and copy the stall counter line. */
 function withShopTwins(defs: SampleDef[]): SampleDef[] {
   const byId = new Map(defs.map((d) => [d.meta.id, d]));
@@ -1182,12 +1185,12 @@ function townLifeDefs(): SampleDef[] {
     counter("prop_int_station_counter", "Ticket window (clerk behind)", 128, 30, "#8c5630", ["station", "ticket"], D.stationCounter),
     interior("prop_platform_canopy", "Station platform canopy", "#cc3a34", ["station", "platform", "train"], D.platformCanopy),
     prop("prop_rail_track", "Rail track (side)", 480, 16, "back", "#87919f", ["rail", "train", "station", "town-life"], D.railTrack, undefined, "street"),
-    prop("prop_train_loco", "Train · locomotive", 128, 56, "back", "#4064b4", ["train", "vehicle", "town-life"], D.trainLoco, undefined, "street"),
-    prop("prop_train_car", "Train · passenger car", 160, 56, "back", "#cc3a34", ["train", "vehicle", "town-life"], D.trainCar, undefined, "street"),
+    faced(prop("prop_train_loco", "Train · locomotive", 128, 56, "back", "#4064b4", ["train", "vehicle", "town-life"], D.trainLoco, undefined, "street"), "left"),
+    faced(prop("prop_train_car", "Train · passenger car", 160, 56, "back", "#cc3a34", ["train", "vehicle", "town-life"], D.trainCar, undefined, "street"), "left"),
     interior("prop_int_airport", "Airport terminal · check-in", "#d8dde4", ["airport", "flight", "ticket"], D.terminalHall),
     counter("prop_int_airport_counter", "Check-in desk (agent behind)", 160, 24, "#4064b4", ["airport", "ticket"], D.checkinDesk),
-    prop("prop_plane_side", "Passenger plane (side)", 160, 56, "back", "#e6ded6", ["plane", "airport", "vehicle", "town-life"], D.planeSide, undefined, "street"),
-    prop("prop_plane_sky", "Plane in the sky (small)", 48, 16, "back", "#e6ded6", ["plane", "sky", "town-life"], D.planeSky, undefined, "decor"),
+    faced(prop("prop_plane_side", "Passenger plane (side)", 160, 56, "back", "#e6ded6", ["plane", "airport", "vehicle", "town-life"], D.planeSide, undefined, "street"), "left"),
+    faced(prop("prop_plane_sky", "Plane in the sky (small)", 48, 16, "back", "#e6ded6", ["plane", "sky", "vehicle", "town-life"], D.planeSky, undefined, "decor"), "left"),
     prop("prop_control_tower", "Airport control tower", 48, 160, "back", "#b4aa9a", ["airport", "tower", "town-life"], D.controlTower, undefined, "building"),
     building("prop_bld_airport_terminal", "Airport terminal (ท่าอากาศยาน)", 224, 112, "#4f7896", ["airport", "terminal", "town-life"], D.terminalFacade),
     prop("prop_runway_marks", "Runway markings", 480, 8, "front", "#ffffff", ["airport", "runway", "town-life"], D.runwayMarks, undefined, "street"),
@@ -1236,7 +1239,7 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_signpost_th", "Road signs (TH)", 48, 64, "back", "#2e8c52", ["sign", "road", "thai-town"], TOWN_DRAW.signpostThai, undefined, "street"),
     prop("prop_potted_plants", "Potted plants", 32, 28, "back", "#4f9a4a", ["plant", "pot", "thai-town"], TOWN_DRAW.pottedPlants, undefined, "nature"),
     prop("prop_flower_box", "Marigold planter", 32, 18, "front", "#f6923a", ["flowers", "planter", "thai-town"], TOWN_DRAW.flowerBox, undefined, "nature"),
-    prop("prop_motorbike", "Motorbike", 48, 32, "back", "#cc3a34", ["vehicle", "scooter", "thai-town"], TOWN_DRAW.motorbike, undefined, "street"),
+    faced(prop("prop_motorbike", "Motorbike", 48, 32, "back", "#cc3a34", ["vehicle", "scooter", "thai-town"], TOWN_DRAW.motorbike, undefined, "street"), "left"),
     prop("prop_street_dog", "Street dog", 24, 16, "back", "#cc9050", ["animal", "dog", "thai-town"], TOWN_DRAW.streetDog, undefined, "street"),
     prop("prop_cat", "Cat", 16, 12, "back", "#e09444", ["animal", "cat", "thai-town"], TOWN_DRAW.cat, undefined, "street"),
     prop("prop_pier", "Wooden pier", 64, 48, "back", "#8c5630", ["pier", "canal", "boardwalk", "thai-town"], TOWN_DRAW.pier, { x: 0, y: 0, w: 64, h: 6 }, "water"),
@@ -1262,8 +1265,8 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_lamp_post_city", "Cast-iron lamp post", 16, 88, "back", "#262e32", ["lamp", "light", "city", "brick-town"], BRICK_DRAW.lampPost, undefined, "street"),
     prop("prop_fire_hydrant", "Fire hydrant", 12, 18, "back", "#b82c28", ["hydrant", "city", "brick-town"], BRICK_DRAW.hydrant, undefined, "street"),
     prop("prop_bus_stop", "Bus stop shelter", 64, 64, "back", "#7a8494", ["bus", "shelter", "city", "brick-town"], BRICK_DRAW.busStop, undefined, "street"),
-    prop("prop_car_hatch_red", "Parked hatchback (red)", 56, 30, "front", "#b82c28", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.redHatch, undefined, "street"),
-    prop("prop_car_sedan_dark", "Parked sedan (dark)", 72, 28, "front", "#343c4c", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.darkSedan, undefined, "street"),
+    faced(prop("prop_car_hatch_red", "Parked hatchback (red)", 56, 30, "front", "#b82c28", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.redHatch, undefined, "street"), "right"),
+    faced(prop("prop_car_sedan_dark", "Parked sedan (dark)", 72, 28, "front", "#343c4c", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.darkSedan, undefined, "street"), "right"),
     prop("prop_city_road", "Road strip (curb + lanes)", 128, ROAD_H, "front", "#2c2c34", ["road", "asphalt", "curb", "lane", "city", "brick-town"], BRICK_DRAW.roadStrip, undefined, "street"),
   ]);
 }

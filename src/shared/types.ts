@@ -64,6 +64,19 @@ export interface PropPart extends PartMetaBase {
   category?: PropCategory;
   /** Shop / stall / counter metadata (town life): open-closed twins and the seller-behind-counter split. */
   shop?: ShopPartMeta;
+  /**
+   * Vehicles: which way the nose / front points in the unflipped image. A runtime that moves the
+   * sprite must mirror it when the travel direction differs (`noseScaleX(facing, vx)`), or it flies backwards.
+   */
+  facing?: Facing;
+}
+
+export type Facing = "left" | "right";
+
+/** Horizontal scale (+1 / -1) that points a part drawn facing `facing` along velocity `vx` (vx = 0 keeps the art as drawn). */
+export function noseScaleX(facing: Facing | undefined, vx: number): 1 | -1 {
+  if (!facing || vx === 0) return 1;
+  return (vx > 0) === (facing === "right") ? 1 : -1;
 }
 
 export interface ShopPartMeta {

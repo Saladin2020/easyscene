@@ -298,6 +298,7 @@ program
   .option("--name-ms <name>", "Malay name")
   .option("--town <id>", "Overworld town id (for the exits back)")
   .option("--map <id>", "Overworld map id (for the exits back)")
+  .option("--more", "DSK-6 annex: more houses, civic buildings / offices, flea market, parked vehicles")
   .option("--scenes-dir <dir>", "Where to write the scene JSON (default scenes/)")
   .option("--export <presets>", "Also export: png,godot,pixi or all")
   .option("--out <dir>", "Export parent folder (default exports/)")
@@ -311,7 +312,7 @@ program
     await initWorkspace(root);
     allowForThisRun(opts.scenesDir);
     allowForThisRun(opts.out);
-    const spec: TownSceneSpec = { id: opts.id, kind: opts.kind, seed: Number(opts.seed) || 0, ...(opts.town ? { town: opts.town } : {}), ...(opts.map ? { map: opts.map } : {}) };
+    const spec: TownSceneSpec = { id: opts.id, kind: opts.kind, seed: Number(opts.seed) || 0, ...(opts.town ? { town: opts.town } : {}), ...(opts.map ? { map: opts.map } : {}), ...(opts.more ? { more: true } : {}) };
     if (opts.nameTh && opts.nameEn) spec.name = { th: opts.nameTh, en: opts.nameEn, ...(opts.nameMs ? { ms: opts.nameMs } : {}) };
     printTowns(opts.json, await composeTowns(root, [spec], opts));
   });
@@ -320,6 +321,7 @@ program
   .command("towns")
   .description("Compose one side-view town scene per town of an Easy Tilemap overworld map")
   .requiredOption("--from-overworld <map.json>", "Easy Tilemap map JSON with an overworld block")
+  .option("--more", "DSK-6 annex for every town (also per town: overworld.towns[].more = true)")
   .option("--scenes-dir <dir>", "Where to write the scene JSON (default scenes/)")
   .option("--export <presets>", "Also export: png,godot,pixi or all")
   .option("--out <dir>", "Export parent folder (default exports/)")
@@ -334,6 +336,7 @@ program
     allowForThisRun(opts.out);
     const map = JSON.parse(await readFile(path.resolve(opts.fromOverworld), "utf8"));
     const { specs, warnings } = townSpecsFromOverworld(map);
+    if (opts.more) for (const sp of specs) sp.more = true;
     printTowns(opts.json, await composeTowns(root, specs, opts), warnings);
     if (!specs.length) process.exitCode = 1;
   });

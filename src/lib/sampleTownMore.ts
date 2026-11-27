@@ -49,90 +49,11 @@ function bevel(img: RgbaImage, x: number, y: number, w: number, h: number, r: Rg
   vline(img, x + w - 1, y + 1, y + h - 1, r[Math.max(0, body - 1)]!);
 }
 /** Lit wall: vertical gradient + dither, darker to the right. */
-function wall(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], lit = 0.7): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) setPx(img, x, y, pick(pal, lit - ((y - y0) / h) * 0.18 - ((x - x0) / w) * 0.12, x, y, 0.3));
-}
 /** Horizontal wooden planks. */
-function planks(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-    const row = Math.floor((y - y0) / 4);
-    const seam = (y - y0) % 4 === 3;
-    const joint = (x - x0 + row * 13) % 37 === 0;
-    const t = 0.62 + (hash(row, Math.floor((x + row * 13) / 37), seed) - 0.5) * 0.25 - ((x - x0) / w) * 0.1;
-    setPx(img, x, y, seam || joint ? pal[1]! : pick(pal, t, x, y, 0.25));
-  }
-}
-function shadeRect(img: RgbaImage, x0: number, y0: number, w: number, h: number, amount: number): void {
-  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (alphaAt(img, x, y)) setPx(img, x, y, mix(getPx(img, x, y), SHADOW, amount));
-}
 function signText(img: RgbaImage, key: ThaiSignKey, x: number, y: number, c: Rgb, shadow?: Rgb): void {
   const s = THAI_SIGNS[key];
   const passes: Array<[number, number, Rgb]> = shadow ? [[1, 1, shadow], [0, 0, c]] : [[0, 0, c]];
   for (const [dx, dy, col] of passes) for (let yy = 0; yy < s.height; yy++) for (let xx = 0; xx < s.width; xx++) if (s.rows[yy]![xx] === "#") setPx(img, x + xx + dx, y + yy + dy, col);
-}
-/** Sign board with a centred Thai word; returns its box. */
-function board(img: RgbaImage, key: ThaiSignKey, cx: number, y: number, pal: Rgb[], text: Rgb, padX = 5, padY = 3): { x: number; w: number; h: number } {
-  const s = THAI_SIGNS[key];
-  const w = s.width + padX * 2;
-  const h = s.height + padY * 2;
-  const x = Math.round(cx - w / 2);
-  bevel(img, x, y, w, h, pal, 2);
-  signText(img, key, x + padX, y + padY, text, pal[0]);
-  return { x, w, h };
-}
-/** Window with a frame; lit at night. */
-function win(img: RgbaImage, x: number, y: number, w: number, h: number, frame: Rgb[], bars = 1, curtain?: Rgb): void {
-  bevel(img, x - 1, y - 1, w + 2, h + 2, frame, 3);
-  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(GLASS, 0.7 - yy / (h * 2.2) - (xx / w) * 0.1 + (xx + yy < 4 ? 0.25 : 0), x + xx, y + yy, 0.3));
-  if (curtain) for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < Math.ceil(w / 4); xx++) { setPx(img, x + xx, y + yy, curtain); setPx(img, x + w - 1 - xx, y + yy, mix(curtain, SHADOW, 0.2)); }
-  for (let b = 1; b <= bars; b++) vline(img, x + Math.round((b * w) / (bars + 1)), y, y + h - 1, frame[2]!);
-  markNight(img, "window-lit", () => { for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, getPx(img, x + xx, y + yy)); });
-}
-function door(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[]): void {
-  bevel(img, x - 1, y - 1, w + 2, h + 1, TEAK, 1);
-  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(pal, 0.6 - (xx / w) * 0.25, x + xx, y + yy, 0.3));
-  vline(img, x + Math.floor(w / 2), y, y + h - 1, pal[1]!);
-  setPx(img, x + Math.floor(w / 2) - 2, y + Math.floor(h / 2), YELLOW[4]!);
-}
-/** Gable / pitched roof drawn as a triangle-ish slab from (x0..x1) at baseline y with height h. */
-function pitched(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], overhang = 4, steep = 1): void {
-  const cx = (x0 + x1) / 2;
-  for (let yy = 0; yy < h; yy++) {
-    const half = ((x1 - x0) / 2 + overhang) * ((yy + 1) / h) ** steep;
-    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
-      const t = 0.75 - (yy / h) * 0.15 - ((x - cx) / (x1 - x0)) * 0.35 - (yy % 3 === 2 ? 0.18 : 0);
-      setPx(img, x, y - h + yy, pick(pal, t, x, y - h + yy, 0.3));
-    }
-  }
-  hline(img, Math.round(cx - (x1 - x0) / 2 - overhang), Math.round(cx + (x1 - x0) / 2 + overhang), y, pal[0]!);
-}
-function ground(img: RgbaImage, w: number, h: number, pal = CONCRETE): void {
-  hline(img, 0, w - 1, h - 4, pal[4]!);
-  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, pal[2]!);
-}
-function wheel(img: RgbaImage, cx: number, cy: number, r: number): void {
-  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
-    const d = Math.hypot(x - cx, y - cy);
-    if (d > r + 0.3) continue;
-    setPx(img, x, y, d > r - 2 ? pick(TIRE, 0.5 - (y - cy) / (r * 3), x, y, 0.2) : d < 1.3 ? STEEL[1]! : pick(STEEL, 0.75 - (y - cy) / (r * 2.5), x, y, 0.3));
-  }
-}
-/** Car-ish body: rows of [x0, x1] spans from y0, filled with a ramp and a beltline highlight. */
-function body(img: RgbaImage, spans: Array<[number, number]>, y0: number, pal: Rgb[], belt?: number): void {
-  spans.forEach(([a, b], i) => {
-    const y = y0 + i;
-    for (let x = a; x <= b; x++) setPx(img, x, y, pick(pal, 0.78 - (i / spans.length) * 0.4 - ((x - a) / Math.max(1, b - a)) * 0.08, x, y, 0.3));
-  });
-  if (belt !== undefined) { const [a, b] = spans[belt - y0] ?? [0, -1]; hline(img, a + 1, b - 1, belt, pal[5] ?? pal[pal.length - 1]!); }
-}
-function headlight(img: RgbaImage, x: number, y: number): void {
-  setPx(img, x, y, WARM[4]!);
-  setPx(img, x, y + 1, WARM[3]!);
-  markNight(img, "light", () => { setPx(img, x, y, WARM[4]!); setPx(img, x, y + 1, WARM[4]!); });
-}
-function taillight(img: RgbaImage, x: number, y: number): void {
-  setPx(img, x, y, RED[4]!);
-  setPx(img, x, y + 1, RED[3]!);
 }
 
 // ---------------- vehicles (facing right) ----------------
@@ -421,7 +342,7 @@ function taxi(): RgbaImage {
 }
 
 // ---------------- building kit (DSK-8: same primitives as the town set) ----------------
-const { ledge, plinth, glassPane, pottedPlant, acUnit, awning, redLantern, shadeArea, lightArea, tinRoof, ball } = K;
+const { ring, ledge, plinth, glassPane, pottedPlant, acUnit, awning, redLantern, shadeArea, lightArea, tinRoof, ball } = K;
 const renderWall = K.wall;
 const TERRA = K.pal.TERRA;
 const BLUE_POT = K.pal.BLUE_POT;
@@ -942,72 +863,132 @@ function companyOffice(): RgbaImage {
 }
 
 // ---------------- ตลาดนัดมือสอง (flea market) ----------------
-/** Clothes stall (96 × 80): tarp roof, a rail of second-hand shirts at the back, folded clothes on the table (counterTop 50). */
+/** Market canopy: peaked tarp with ribs (lit left slope, shaded right) over a striped scalloped valance with a cast shadow. */
+function canopy(img: RgbaImage, w: number, tarp: Rgb[], stripe: Rgb[]): void {
+  const cx = w / 2;
+  for (let y = 1; y < 9; y++) {
+    const half = 10 + (y - 1) * ((w / 2 - 10) / 7);
+    for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) {
+      let t = (x < cx ? 0.82 : 0.48) - (y - 1) * 0.02;
+      if (Math.abs(x - cx) < 1) t = 0.95;
+      if (Math.round(Math.abs(x - cx)) % 12 === 0) t -= 0.18;
+      setPx(img, x, y, pick(tarp, t, x, y, 0.3));
+    }
+  }
+  hline(img, Math.round(cx - 10), Math.round(cx + 10), 1, tarp[5]!);
+  awning(img, 0, 9, w, 9, tarp, stripe, 8, 5);
+}
+function stallPoles(img: RgbaImage, w: number, h: number, pal: Rgb[] = STEEL): void {
+  for (const x of [3, w - 6]) { for (let y = 12; y < h - 3; y++) { setPx(img, x, y, pal[4]!); setPx(img, x + 1, y, pal[3]!); setPx(img, x + 2, y, pal[1]!); } }
+}
+/** Hanging bulb on a flex, lit at night. */
+function bulb(img: RgbaImage, x: number, y0: number, len: number): void {
+  vline(img, x, y0, y0 + len, STEEL[0]!);
+  rect(img, x - 1, y0 + len + 1, 3, 3, WARM[2]!); setPx(img, x - 1, y0 + len + 1, WARM[3]!);
+  markNight(img, "light", () => rect(img, x - 1, y0 + len + 1, 3, 3, WARM[4]!));
+}
+/** Table at counterTop 50 with a draped cloth (vertical folds, darker hem). */
+function stallTable(img: RgbaImage, w: number, h: number, cloth: Rgb[]): void {
+  bevel(img, 5, 50, w - 10, 3, TEAK, 3);
+  for (let y = 53; y < h - 4; y++) for (let x = 6; x < w - 6; x++) {
+    const f = (x + Math.round(Math.sin(y / 3) * 0.6)) % 7;
+    let t = 0.66 - ((y - 53) / (h - 57)) * 0.2 - (f === 0 ? 0.22 : f === 1 ? -0.1 : 0);
+    if (y === h - 5) t = 0.18;
+    setPx(img, x, y, pick(cloth, t, x, y, 0.3));
+  }
+  shadeArea(img, 6, 53, w - 12, 2, 0.3);
+  for (let x = 4; x < w - 4; x++) setPx(img, x, h - 4, SHADOW, 90);
+}
+function ground(img: RgbaImage, w: number, h: number): void {
+  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, y === h - 3 ? CONCRETE[4]! : CONCRETE[2]!);
+  for (let x = 0; x < w; x++) if (hash(x, 2, 17) > 0.86) setPx(img, x, h - 2, CONCRETE[1]!);
+}
+/** Clothes stall (96 × 80): peaked tarp canopy, sign, a rail of second-hand shirts, folded piles on a draped table (counterTop 50). */
 function fleaClothesStall(tarp: Rgb[], seed: number): () => RgbaImage {
   return () => {
     const w = 96, h = 80;
     const img = createImage(w, h);
-    for (const x of [3, w - 5]) for (let y = 10; y < h - 4; y++) { setPx(img, x, y, STEEL[3]!); setPx(img, x + 1, y, STEEL[1]!); }
-    for (let y = 4; y < 14; y++) hline(img, 0, w - 1, y, pick(tarp, 0.8 - (y - 4) / 20 - ((y - 4) % 4 === 3 ? 0.2 : 0), 0, y, 0.3));
-    for (let x = 0; x < w; x += 6) for (let k = 0; k < 3; k++) setPx(img, x + k, 14 + (k === 1 ? 1 : 0), tarp[1]!);
-    board(img, "clothes", w / 2, 16, YELLOW.slice(1), RED[1]!, 5, 2);
-    // rail of shirts behind the seller
-    hline(img, 6, w - 7, 34, STEEL[4]!);
-    for (let i = 0; i < 9; i++) shirt(img, 8 + i * 9, 35, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL, ORANGE][(i + seed) % 8]!);
-    // table with folded clothes + price tags
-    rect(img, 6, 50, w - 12, 4, TEAK[4]!);
-    for (let y = 54; y < h - 4; y++) hline(img, 6, w - 7, y, pick(TARP, 0.5 - (y - 54) / 60, 6, y, 0.3));
-    for (let i = 0; i < 7; i++) { const pal = [BLUE, RED, GREEN, YELLOW, PINK, WHITEWALL, TEAL][(i * 3 + seed) % 7]!; for (let k = 0; k < 3; k++) { rect(img, 10 + i * 11, 47 - k * 2, 9, 2, pal[3 - (k % 2)]!); hline(img, 10 + i * 11, 18 + i * 11, 47 - k * 2, pal[5]!); } }
-    board(img, "sale", 70, 58, RED.slice(1), WHITE, 3, 2);
-    hline(img, 0, w - 1, h - 4, CONCRETE[4]!);
-    for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-    selOutline(img, 0.4);
+    for (let y = 18; y < 50; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(rgb("#3a3040"), tarp[0]!, 0.3 + (y - 18) / 120)); // shade inside the stall
+    stallPoles(img, w, h);
+    hline(img, 6, w - 7, 28, STEEL[5]!); hline(img, 6, w - 7, 29, STEEL[2]!);
+    for (let i = 0; i < 9; i++) shirt(img, 7 + i * 9, 29, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL, ORANGE][(i + seed) % 8]!);
+    canopy(img, w, tarp, CLOTH.concat([WHITE, WHITE]));
+    bulb(img, 26, 18, 3); bulb(img, 70, 18, 3);
+    stallTable(img, w, h, seed % 2 ? shadeRamp("#d8c8a8") : shadeRamp("#7fb0d0"));
+    for (let i = 0; i < 7; i++) {
+      const pal = [BLUE, RED, GREEN, YELLOW, PINK, WHITEWALL, TEAL][(i * 3 + seed) % 7]!;
+      const n = 2 + ((i + seed) % 3);
+      for (let k = 0; k < n; k++) { const y = 48 - k * 2; rect(img, 9 + i * 11, y, 9, 2, pal[3]!); hline(img, 9 + i * 11, 17 + i * 11, y, pal[5]!); setPx(img, 17 + i * 11, y + 1, pal[1]!); }
+    }
+    signBoard(img, "clothes", 25, 55, YELLOW, RED[1]!, { padX: 2, padY: 0 });
+    signBoard(img, "sale", 71, 59, RED, WHITE, { padX: 2, padY: 1 });
+    ground(img, w, h);
+    selOutline(img, 0.42);
     return img;
   };
 }
-/** Second-hand goods stall (96 × 80): radios, lamps, shoes, a kettle, books on a mat table (counterTop 50). */
+/** Second-hand goods stall (96 × 80): radios, a fan, a clock and lamps on a shelf; shoes, kettle, camera, books on the table (counterTop 50). */
 function fleaJunkStall(): RgbaImage {
   const w = 96, h = 80;
   const img = createImage(w, h);
-  for (const x of [3, w - 5]) for (let y = 10; y < h - 4; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  for (let y = 4; y < 14; y++) hline(img, 0, w - 1, y, pick(GREEN, 0.75 - (y - 4) / 20 - ((y >> 1) & 1) * 0.12, 0, y, 0.3));
-  board(img, "flea", w / 2, 16, ORANGE.slice(1), WHITE, 4, 2);
-  // shelf behind: radios + lamps
-  hline(img, 8, w - 9, 40, TEAK[4]!);
-  for (let i = 0; i < 4; i++) { bevel(img, 10 + i * 20, 30, 14, 10, [STEEL, TEAK, RED, BLUE][i]!, 2); setPx(img, 14 + i * 20, 34, STEEL[5]!); setPx(img, 20 + i * 20, 33, STEEL[0]!); }
-  // table goods
-  rect(img, 6, 50, w - 12, 4, TEAK[4]!);
-  for (let y = 54; y < h - 4; y++) hline(img, 6, w - 7, y, pick(TEAK, 0.45 - (y - 54) / 70, 6, y, 0.3));
-  for (let i = 0; i < 3; i++) { rect(img, 10 + i * 9, 46, 7, 4, [RED, BLUE, TEAK][i]![3]!); hline(img, 10 + i * 9, 16 + i * 9, 46, [RED, BLUE, TEAK][i]![5]!); } // shoes
-  for (let y = 42; y < 50; y++) for (let x = 42; x < 52; x++) { const d = Math.hypot(x - 47, y - 46); if (d < 4.5) setPx(img, x, y, pick(STEEL, sphereLight(x - 47, y - 46, 5), x, y, 0.3)); } // kettle
-  hline(img, 51, 54, 44, STEEL[3]!);
-  for (let i = 0; i < 4; i++) rect(img, 62 + i * 6, 42 + (i % 2), 5, 8 - (i % 2), [YELLOW, GREEN, RED, BLUE][i]![3]!); // books
-  hline(img, 0, w - 1, h - 4, CONCRETE[4]!);
-  for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-  selOutline(img, 0.4);
+  for (let y = 18; y < 50; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(rgb("#34302a"), GREEN[0]!, 0.3 + (y - 18) / 120));
+  stallPoles(img, w, h, TEAK);
+  // shelf with radios, a fan, a clock, a lamp
+  bevel(img, 8, 40, w - 16, 3, TEAK, 3); shadeArea(img, 8, 43, w - 16, 2, 0.3);
+  for (let i = 0; i < 3; i++) { const x = 10 + i * 17, pal = [STEEL, TEAK, RED][i]!; bevel(img, x, 30, 14, 10, pal, 2); for (let k = 0; k < 4; k++) ring(img, x + 4, 35, 2, 2, pal[1]!); setPx(img, x + 4, 35, pal[0]!); for (let y = 32; y < 38; y += 2) hline(img, x + 8, x + 12, y, pal[4]!); vline(img, x + 12, 26, 30, STEEL[3]!); }
+  ring(img, 68, 33, 5, 5, STEEL[4]!); ring(img, 68, 33, 3, 3, STEEL[2]!); setPx(img, 68, 33, STEEL[5]!); vline(img, 68, 38, 40, STEEL[1]!); // desk fan
+  ball(img, 81, 34, 4, CLOTH.concat([WHITE])); line(img, 81, 34, 81, 31, INK); line(img, 81, 34, 83, 35, INK); // clock
+  canopy(img, w, GREEN, YELLOW);
+  bulb(img, 48, 18, 3);
+  stallTable(img, w, h, TARP);
+  signBoard(img, "flea", w / 2, 57, ORANGE, WHITE, { padX: 2, padY: 1 });
+  for (let i = 0; i < 3; i++) { const pal = [RED, BLUE, TEAK][i]!; const x = 9 + i * 9; for (let y = 45; y < 50; y++) hline(img, x + (y < 47 ? 3 : 0), x + 6, y, pick(pal, 0.7 - (y - 45) * 0.08, x, y, 0.3)); hline(img, x, x + 6, 49, INK); } // shoes
+  ball(img, 44, 45, 4, STEEL); hline(img, 48, 51, 43, STEEL[3]!); hline(img, 41, 47, 40, STEEL[1]!); // kettle
+  bevel(img, 54, 43, 9, 7, TIRE, 2); ring(img, 58, 46, 2, 2, STEEL[4]!); setPx(img, 58, 46, GLASS[4]!); // camera
+  for (let i = 0; i < 4; i++) bevel(img, 66 + i * 6, 41 + (i % 2), 5, 9 - (i % 2), [YELLOW, GREEN, RED, BLUE][i]!, 3); // books
+  ground(img, w, h);
+  selOutline(img, 0.42);
   return img;
 }
-/** Free-standing clothes rack (48 × 48). */
+/** Rolling clothes rack (48 × 48): chrome frame on casters, mixed shirts and a dress, a price tag. */
 function clothesRack(): RgbaImage {
   const img = createImage(48, 48);
-  vline(img, 3, 8, 44, STEEL[3]!); vline(img, 44, 8, 44, STEEL[3]!);
-  hline(img, 3, 44, 8, STEEL[4]!);
-  hline(img, 0, 7, 45, STEEL[2]!); hline(img, 40, 47, 45, STEEL[2]!);
-  for (let i = 0; i < 4; i++) shirt(img, 5 + i * 10, 9, [TEAL, YELLOW, RED, BLUE][i]!);
-  selOutline(img, 0.4);
+  for (const x of [4, 42]) { vline(img, x, 6, 42, STEEL[4]!); vline(img, x + 1, 6, 42, STEEL[2]!); }
+  hline(img, 3, 44, 6, STEEL[5]!); hline(img, 3, 44, 7, STEEL[2]!);
+  hline(img, 1, 10, 42, STEEL[3]!); hline(img, 37, 46, 42, STEEL[3]!);
+  for (const x of [2, 9, 38, 45]) { ball(img, x, 45, 1.6, TIRE); }
+  for (let i = 0; i < 4; i++) shirt(img, 6 + i * 9, 7, [TEAL, YELLOW, RED, BLUE][i]!);
+  // a long dress at the end
+  for (let y = 9; y < 36; y++) { const half = y < 12 ? 2 : 2 + Math.floor((y - 12) / 6); for (let dx = -half; dx <= half; dx++) setPx(img, 39 + dx - 4 + 4, y, pick(PINK, 0.75 - (dx + half) / (half * 4) - (dx % 2 ? 0.08 : 0), 39 + dx, y, 0.3)); }
+  setPx(img, 39, 8, STEEL[4]!);
+  bevel(img, 22, 26, 6, 4, WHITEWALL, 3); setPx(img, 23, 27, RED[3]!); setPx(img, 25, 27, RED[3]!); // price tag
+  selOutline(img, 0.42);
   return img;
 }
-/** Market entrance banner on two tall poles (160 × 64): "ตลาดนัดมือสอง". */
+/** Market entrance arch (160 × 64): two posts, a peaked banner "ตลาดนัดมือสอง", bunting and a string of bulbs. */
 function fleaBanner(): RgbaImage {
   const w = 160, h = 64;
   const img = createImage(w, h);
-  for (const x of [2, w - 4]) for (let y = 0; y < h; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  for (let y = 4; y < 22; y++) hline(img, 6, w - 7, y, pick(ORANGE, 0.7 - (y - 4) / 40, 6, y, 0.3));
-  hline(img, 6, w - 7, 4, ORANGE[5]!);
-  hline(img, 6, w - 7, 21, ORANGE[1]!);
-  signText(img, "flea", Math.round(w / 2 - THAI_SIGNS.flea.width / 2), 8, WHITE, ORANGE[0]);
-  for (let x = 8; x < w - 8; x += 8) { setPx(img, x, 23, [RED, YELLOW, GREEN, BLUE][(x / 8) % 4 | 0]![4]!); setPx(img, x + 1, 24, [RED, YELLOW, GREEN, BLUE][(x / 8) % 4 | 0]![3]!); }
-  selOutline(img, 0.4);
+  for (const x of [3, w - 8]) { for (let y = 4; y < h; y++) for (let k = 0; k < 5; k++) setPx(img, x + k, y, pick(TEAK, k === 0 ? 0.92 : k === 4 ? 0.25 : 0.62 - (y % 9 === 0 ? 0.15 : 0), x + k, y, 0.25)); bevel(img, x - 1, 2, 7, 3, TEAK, 4); }
+  // peaked banner board
+  for (let y = 4; y < 26; y++) {
+    const peak = Math.max(0, 6 - y) * 6;
+    for (let x = 10 + peak; x < w - 10 - peak; x++) setPx(img, x, y, pick(ORANGE, (y < 7 ? 0.95 : 0.72) - ((y - 4) / 22) * 0.3 - ((x - 10) / (w - 20)) * 0.08, x, y, 0.3));
+  }
+  for (let x = 10; x < w - 10; x++) { setPx(img, x, 23, YELLOW[4]!); setPx(img, x, 25, ORANGE[0]!); }
+  signText(img, "flea", Math.round(w / 2 - THAI_SIGNS.flea.width / 2), 14 - Math.floor(THAI_SIGNS.flea.height / 2), WHITE, ORANGE[0]);
+  shadeArea(img, 10, 26, w - 20, 0, 0.3);
+  // bunting
+  for (let i = 0; i < 18; i++) {
+    const x0 = 12 + i * 8, sag = Math.round(Math.sin((i / 17) * Math.PI) * 4);
+    const pal = [RED, YELLOW, GREEN, BLUE, PINK][i % 5]!;
+    hline(img, x0, x0 + 7, 28 + sag, STEEL[1]!);
+    for (let k = 0; k < 4; k++) hline(img, x0 + 1 + k, x0 + 6 - k, 29 + sag + k, k === 0 ? pal[4]! : pal[3]!);
+  }
+  // string of bulbs
+  for (let x = 9; x < w - 9; x++) { const y = 38 + Math.round(Math.sin(((x - 9) / (w - 18)) * Math.PI) * 6); setPx(img, x, y, STEEL[0]!); if ((x - 9) % 10 === 5) { setPx(img, x, y + 1, WARM[2]!); markNight(img, "light", () => { setPx(img, x, y + 1, WARM[4]!); setPx(img, x, y + 2, WARM[3]!); }); } }
+  pottedPlant(img, 15, h - 1, "leafy", TERRA, 3); pottedPlant(img, w - 16, h - 1, "flower", TERRA, 6);
+  selOutline(img, 0.42);
   return img;
 }
 

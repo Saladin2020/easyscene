@@ -66,7 +66,7 @@ const ANNEX: Partial<Record<TownKind, Annex>> = {
   },
   chinese_town: {
     items: ["prop_bld_shophouse_chinese", "prop_bld_bank", "prop_bld_post_office", { part: "prop_flea_banner", gapBefore: 16 }, "prop_bld_flea_clothes", "prop_bld_flea_junk", "prop_bld_flea_clothes_red", { part: "prop_bld_police", gapBefore: 80 }, "prop_bld_hospital"],
-    props: [{ part: "prop_car_pickup", dx: 140 }, { part: "prop_clothes_rack", dx: 784 }, { part: "prop_tuktuk", dx: 1060, flipX: true }, { part: "prop_scooter_teal", dx: 1100 }],
+    props: [{ part: "prop_car_pickup", dx: 140 }, { part: "prop_clothes_rack", dx: 852 }, { part: "prop_tuktuk", dx: 1060, flipX: true }, { part: "prop_scooter_teal", dx: 1100 }],
   },
   malay_kampung: {
     items: ["prop_bld_house_kampung", "prop_bld_shophouse_stationery", "prop_bld_post_office"],

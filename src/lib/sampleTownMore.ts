@@ -7,9 +7,9 @@
  * Every vehicle is drawn facing RIGHT (its part has `facing: "right"`).
  */
 import { createImage, type RgbaImage } from "../shared/raster.js";
-import { type Rgb, alphaAt, getPx, hash, markNight, mix, pick, ramp, rect, rgb, selOutline, setPx, sphereLight } from "./pixelArt.js";
+import { type Rgb, alphaAt, bayer, getPx, hash, markNight, mix, pick, ramp, rect, rgb, selOutline, setPx, sphereLight } from "./pixelArt.js";
 import { THAI_SIGNS, type ThaiSignKey } from "./thaiSignText.js";
-import { TOWN_KIT, shadeRamp } from "./sampleTown.js";
+import { TOWN_KIT, shadeRamp, shophouse } from "./sampleTown.js";
 
 const K = TOWN_KIT;
 const GLINT = K.pal.GLINT;
@@ -420,150 +420,330 @@ function taxi(): RgbaImage {
   return finishVehicle(img, () => { lamp(img, 83, 16, 3, 2); tail(img, 2, 16, 2, 3); }, [8, 80]);
 }
 
+// ---------------- building kit (DSK-8: same primitives as the town set) ----------------
+const { ledge, plinth, glassPane, pottedPlant, acUnit, awning, redLantern, shadeArea, lightArea, tinRoof, ball } = K;
+const renderWall = K.wall;
+const TERRA = K.pal.TERRA;
+const BLUE_POT = K.pal.BLUE_POT;
+const TIN = K.pal.TIN;
+const WALL_CREAM = shadeRamp("#e6d2a2");
+const WALL_WHITE = ramp("#7c8090", "#a2a6b0", "#c4c8cc", "#e0e2e0", "#f2f2ec", "#ffffff");
+
+/** Tiled roof seen from the long side: rows of overlapping tiles (lit lip, dark under-lap), ridge cap, fascia, eave shadow. */
+function tileRoof(img: RgbaImage, x0: number, x1: number, yEave: number, h: number, pal: Rgb[], inset: number, seed: number, fascia: Rgb[] = TEAK): void {
+  for (let y = yEave - h; y <= yEave; y++) {
+    const v = (y - (yEave - h)) / h; // 0 at ridge, 1 at eave
+    const flare = v > 0.82 ? (v - 0.82) * 1.6 : 0; // eaves flare out a little
+    const a = Math.round(x0 + inset * (1 - v) - flare * 6), b = Math.round(x1 - inset * (1 - v) + flare * 6);
+    const row = Math.floor((y - (yEave - h)) / 3), ry = (y - (yEave - h)) % 3;
+    for (let x = a; x <= b; x++) {
+      const col = (x + row * 3) % 6;
+      let t = 0.72 - v * 0.2 - ((x - a) / Math.max(1, b - a)) * 0.12 + (hash(x >> 1, row, seed) - 0.5) * 0.12;
+      if (ry === 0) t += 0.2; else if (ry === 2) t -= 0.3;
+      if (col === 0 && ry > 0) t -= 0.22;
+      if (x === a) t += 0.15;
+      setPx(img, x, y, pick(pal, t, x, y, 0.3));
+    }
+  }
+  const a = x0 + inset, b = x1 - inset;
+  hline(img, a, b, yEave - h, pal[5]!);
+  hline(img, a, b, yEave - h + 1, pal[4]!);
+  // fascia board + eave shadow on whatever is under it
+  const fa = x0 - 5, fb = x1 + 5;
+  hline(img, fa, fb, yEave + 1, fascia[4]!);
+  hline(img, fa, fb, yEave + 2, fascia[2]!);
+  shadeArea(img, fa, yEave + 3, fb - fa + 1, 4, 0.34);
+  shadeArea(img, fa, yEave + 7, fb - fa + 1, 2, 0.28, true);
+}
+/** Thai panel wall (ฝาปะกน): teak stiles + rails framing recessed panels lit top-left. */
+function panelWall(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], cell = 12): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const cx = (x - x0) % cell, cy = (y - y0) % 14;
+    let t: number;
+    if (cx < 2 || cy < 2) t = cx === 0 || cy === 0 ? 0.82 : 0.6; // frame
+    else if (cx === 2 || cy === 2) t = 0.25; // inner shadow
+    else if (cx === cell - 1 || cy === 13) t = 0.72; // lit lower-right lip
+    else t = 0.5 + (hash(Math.floor((x - x0) / cell), Math.floor((y - y0) / 14), 3) - 0.5) * 0.15;
+    t -= ((x - x0) / w) * 0.08;
+    setPx(img, x, y, pick(pal, t, x, y, 0.25));
+  }
+}
+/** Vertical board siding with batten seams and light grain. */
+function boards(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number, step = 5): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const k = (x - x0) % step;
+    let t = 0.62 + (hash(Math.floor((x - x0) / step), 0, seed) - 0.5) * 0.18 - ((y - y0) / h) * 0.12;
+    if (k === 0) t = 0.2; else if (k === 1) t += 0.18;
+    if (hash(x, y >> 2, seed) > 0.93) t -= 0.1;
+    setPx(img, x, y, pick(pal, t, x, y, 0.3));
+  }
+}
+/** Horizontal clapboard / plank siding with shadowed laps. */
+function clapboard(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], seed: number): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const row = Math.floor((y - y0) / 4), ry = (y - y0) % 4;
+    let t = 0.6 + (hash(row, Math.floor((x + row * 11) / 29), seed) - 0.5) * 0.2 - ((x - x0) / w) * 0.08;
+    if (ry === 0) t += 0.18; else if (ry === 3) t -= 0.28;
+    if ((x - x0 + row * 11) % 29 === 0) t -= 0.25;
+    setPx(img, x, y, pick(pal, t, x, y, 0.25));
+  }
+}
+/** Brick texture (running bond) with mortar and a few darker bricks. */
+function brick(img: RgbaImage, x0: number, y0: number, w: number, h: number, pal: Rgb[], mortar: Rgb, seed: number): void {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const row = Math.floor((y - y0) / 4), ry = (y - y0) % 4, bx = (x - x0 + (row % 2) * 4) % 8;
+    if (ry === 3 || bx === 0) { setPx(img, x, y, mortar); continue; }
+    let t = 0.55 + (hash(Math.floor((x - x0 + (row % 2) * 4) / 8), row, seed) - 0.5) * 0.35;
+    if (ry === 0) t += 0.15;
+    setPx(img, x, y, pick(pal, t, x, y, 0.3));
+  }
+}
+/** Framed window: lintel hood with shadow, frame, glass with interior (curtains/lamp), mullions, sill. */
+function framedWindow(img: RgbaImage, x: number, y: number, w: number, h: number, frame: Rgb[], o: { panes?: number; curtain?: Rgb; lit?: boolean; hood?: Rgb[]; seed?: number } = {}): void {
+  const seed = o.seed ?? x * 7 + y;
+  if (o.hood) { bevel(img, x - 3, y - 4, w + 6, 3, o.hood, 3); shadeArea(img, x - 2, y - 1, w + 4, 2, 0.3); }
+  bevel(img, x - 2, y - 2, w + 4, h + 4, frame, 3);
+  glassPane(img, x, y, w, h, (xx, yy) => {
+    if (o.curtain && (xx < w * 0.28 || xx > w * 0.72)) { const f = xx % 3; return f === 0 ? mix(o.curtain, SHADOW, 0.3) : f === 1 ? o.curtain : mix(o.curtain, WHITE, 0.3); }
+    return mix(rgb("#2a2238"), WARM[1]!, hash(Math.floor(xx / 6), 1, seed) > 0.6 ? 0.35 : 0.08);
+  }, 0.3, o.lit === false ? "window" : "window-lit");
+  const panes = o.panes ?? 2;
+  for (let i = 1; i < panes; i++) vline(img, x + Math.round((i * w) / panes), y, y + h - 1, frame[4]!);
+  hline(img, x - 3, x + w + 2, y + h + 2, frame[5]!);
+  hline(img, x - 3, x + w + 2, y + h + 3, frame[2]!);
+  shadeArea(img, x - 2, y + h + 4, w + 4, 1, 0.25);
+}
+/** Louvred / panel shutters folded open on both sides of a window. */
+function shutters(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[]): void {
+  for (const sx of [x - 2 - Math.ceil(w / 2), x + w + 2]) {
+    bevel(img, sx, y - 2, Math.ceil(w / 2), h + 4, pal, 3);
+    for (let yy = y; yy < y + h; yy += 2) hline(img, sx + 1, sx + Math.ceil(w / 2) - 2, yy, pal[1]!);
+  }
+}
+/** Panelled timber door in a frame with a step and a brass knob. */
+function panelDoor(img: RgbaImage, x: number, y: number, w: number, h: number, pal: Rgb[], frame: Rgb[] = TEAK, double = false): void {
+  bevel(img, x - 2, y - 2, w + 4, h + 2, frame, 2);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    const lx = double ? xx % Math.ceil(w / 2) : xx, pw = double ? Math.ceil(w / 2) : w;
+    const inPanel = lx > 1 && lx < pw - 2 && ((yy > 2 && yy < h * 0.45) || (yy > h * 0.5 && yy < h - 3));
+    let t = 0.58 - (xx / w) * 0.15;
+    if (inPanel) t -= 0.16;
+    if (lx === 1 || yy === 1) t += 0.18;
+    setPx(img, x + xx, y + yy, pick(pal, t, x + xx, y + yy, 0.25));
+  }
+  if (double) vline(img, x + Math.ceil(w / 2) - 1, y, y + h - 1, pal[0]!);
+  setPx(img, x + (double ? Math.ceil(w / 2) - 3 : w - 3), y + Math.floor(h * 0.5), YELLOW[4]!);
+}
+/** Balcony / veranda rail: lit top bar, balusters, bottom bar, cast shadow behind. */
+function rail(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], step = 3): void {
+  shadeArea(img, x0, y + 1, x1 - x0 + 1, h, 0.18, true);
+  hline(img, x0, x1, y, pal[5]!); hline(img, x0, x1, y + 1, pal[2]!);
+  for (let x = x0; x <= x1; x += step) { vline(img, x, y + 2, y + h - 1, pal[3]!); if (x + 1 <= x1) setPx(img, x + 1, y + 2, pal[1]!); }
+  hline(img, x0, x1, y + h, pal[4]!); hline(img, x0, x1, y + h + 1, pal[1]!);
+}
+/** Stainless rooftop water tank on a steel stand. */
+function waterTank(img: RgbaImage, cx: number, baseY: number, r = 7): void {
+  for (const dx of [-r + 2, r - 2]) vline(img, cx + dx, baseY - 4, baseY, STEEL[1]!);
+  hline(img, cx - r + 1, cx + r - 1, baseY - 4, STEEL[3]!);
+  for (let y = baseY - 4 - r * 2; y < baseY - 4; y++) for (let x = cx - r; x <= cx + r; x++) {
+    const u = (x - cx) / r;
+    if (Math.abs(u) > 1) continue;
+    let t = 0.92 - Math.abs(u + 0.35) * 0.7;
+    if ((y - (baseY - 4 - r * 2)) % 5 === 0) t -= 0.25;
+    setPx(img, x, y, pick(STEEL, t, x, y, 0.2));
+  }
+  for (let x = cx - r + 2; x <= cx + r - 2; x++) setPx(img, x, baseY - 5 - r * 2, STEEL[4]!);
+}
+/** Wall lamp: bracket + warm shade, lit at night. */
+function wallLamp(img: RgbaImage, x: number, y: number): void {
+  hline(img, x, x + 2, y, STEEL[1]!);
+  rect(img, x + 1, y + 1, 3, 3, WARM[2]!); setPx(img, x + 1, y + 1, WARM[3]!);
+  markNight(img, "light", () => rect(img, x + 1, y + 1, 3, 3, WARM[4]!));
+}
+/** Sign board with a Thai word; `lit` makes the face glow at night. Returns its box. */
+function signBoard(img: RgbaImage, key: ThaiSignKey, cx: number, y: number, pal: Rgb[], text: Rgb, o: { padX?: number; padY?: number; lit?: boolean; trim?: Rgb } = {}): { x: number; w: number; h: number } {
+  const s = THAI_SIGNS[key];
+  const padX = o.padX ?? 5, padY = o.padY ?? 3;
+  const w = s.width + padX * 2, h = s.height + padY * 2;
+  const x = Math.round(cx - w / 2);
+  bevel(img, x - 1, y - 1, w + 2, h + 2, STEEL, 1);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) setPx(img, x + xx, y + yy, pick(pal, 0.68 - yy / (h * 2.4) - (xx / w) * 0.08, x + xx, y + yy, 0.3));
+  hline(img, x, x + w - 1, y, pal[pal.length - 1]!);
+  if (o.trim) { hline(img, x + 1, x + w - 2, y + 1, o.trim); hline(img, x + 1, x + w - 2, y + h - 2, o.trim); }
+  const draw = () => signText(img, key, x + padX, y + padY, text, pal[0]);
+  if (o.lit) markNight(img, "light", draw); else draw();
+  shadeArea(img, x - 1, y + h + 1, w + 2, 2, 0.3);
+  return { x, w, h };
+}
+/** Under-floor shade of a stilt house: dark earth fading downwards, dithered. */
+function underShade(img: RgbaImage, x0: number, x1: number, y0: number, y1: number): void {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const v = (y - y0) / Math.max(1, y1 - y0);
+    if (v > 0.6 && bayer(x, y) < (v - 0.6) * 2.2) continue;
+    setPx(img, x, y, mix(rgb("#3a3036"), rgb("#6a5a50"), v * 0.6 + hash(x, y, 9) * 0.08));
+  }
+}
+function post(img: RgbaImage, x: number, y0: number, y1: number, pal: Rgb[], w = 3): void {
+  for (let y = y0; y <= y1; y++) { setPx(img, x, y, pal[4]!); for (let k = 1; k < w - 1; k++) setPx(img, x + k, y, pal[3]!); setPx(img, x + w - 1, y, pal[1]!); }
+}
+/** Glazed water jar (โอ่ง). */
+function jar(img: RgbaImage, cx: number, baseY: number): void {
+  const J = ramp("#2a1a16", "#4a2c1e", "#6c4028", "#8e5a34", "#b07a48", "#d6a06a");
+  ball(img, cx, baseY - 6, 6, J);
+  hline(img, cx - 3, cx + 3, baseY - 12, J[1]!); hline(img, cx - 3, cx + 3, baseY - 13, J[4]!);
+  hline(img, cx - 3, cx + 3, baseY, J[0]!);
+}
+
 // ---------------- houses ----------------
-/** Thai wooden house on stilts (112 × 112): steep gabled roof, teak plank walls, veranda, stairs, potted plants. */
+/** Thai wooden house on stilts (112 × 112): steep flared tile roof, ฝาปะกน panel walls, open shutters, stair, jar + bench under the floor. */
 function thaiWoodHouse(): RgbaImage {
   const w = 112, h = 112;
   const img = createImage(w, h);
-  // stilts + under-house shade
-  for (let y = 70; y < h - 4; y++) for (let x = 10; x < 100; x++) if (bayerish(x, y)) setPx(img, x, y, mix(CONCRETE[2]!, SHADOW, 0.35));
-  for (const x of [12, 34, 56, 78, 96]) for (let y = 66; y < h - 4; y++) { setPx(img, x, y, TEAK[3]!); setPx(img, x + 1, y, TEAK[1]!); }
-  // body
-  planks(img, 10, 40, 90, 28, TEAK, 7);
-  hline(img, 8, 102, 68, TEAK[1]!);
-  hline(img, 8, 102, 69, TEAK[4]!);
-  win(img, 22, 46, 12, 12, TEAK, 1);
-  win(img, 70, 46, 12, 12, TEAK, 1);
-  door(img, 46, 46, 14, 22, TEAK);
-  // roof: steep gable with ridge
-  pitched(img, 10, 100, 40, 32, ROOF_TILE, 7, 0.85);
-  for (let y = 10; y < 40; y++) { const k = (y - 8) / 32; const half = 51 * k; setPx(img, Math.round(55 - half * 0.25), y, ROOF_TILE[0]!); }
-  // stairs to the door
-  for (let i = 0; i < 9; i++) hline(img, 40 - i * 3, 46 - i * 3, 70 + i * 4, TEAK[4]!);
-  for (let i = 0; i < 9; i++) setPx(img, 40 - i * 3, 71 + i * 4, TEAK[1]!);
-  // plants
-  for (const px of [4, 104]) { rect(img, px - 2, h - 10, 6, 6, ROOF_TILE[2]!); for (let k = 0; k < 14; k++) setPx(img, px + Math.round(Math.cos(k) * 3), h - 12 - (k % 5), GREEN[2 + (k % 3)]!); }
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  underShade(img, 12, 100, 72, h - 4);
+  for (let x = 22; x < 48; x++) { setPx(img, x, 98, x % 3 ? TEAK[5]! : TEAK[3]!); setPx(img, x, 99, TEAK[2]!); } // bamboo bench (แคร่)
+  for (const x of [23, 46]) vline(img, x, 100, h - 4, TEAK[1]!);
+  jar(img, 70, h - 4);
+  for (const x of [13, 35, 57, 79, 97]) post(img, x, 70, h - 4, TEAK);
+  // floor beam + walls
+  bevel(img, 8, 68, 96, 4, TEAK, 3);
+  panelWall(img, 12, 38, 88, 30, TEAK);
+  for (const wx of [22, 76]) { shutters(img, wx, 45, 12, 14, TEAK); framedWindow(img, wx, 45, 12, 14, TEAK, { panes: 1, curtain: rgb("#e8dcc0") }); }
+  panelDoor(img, 48, 44, 16, 24, TEAK, TEAK, true);
+  wallLamp(img, 66, 42);
+  // roof
+  tileRoof(img, 4, 107, 35, 31, ROOF_TILE, 20, 3);
+  // stair to the door with a hand rail
+  for (let i = 0; i < 10; i++) { const sx = 46 - i * 3, sy = 72 + i * 4; hline(img, sx - 3, sx + 2, sy, TEAK[5]!); hline(img, sx - 3, sx + 2, sy + 1, TEAK[2]!); }
+  line(img, 49, 72, 19, h - 4, TEAK[1]!); line(img, 49, 64, 19, h - 12, TEAK[4]!); line(img, 49, 65, 19, h - 11, TEAK[2]!);
+  pottedPlant(img, 6, h - 4, "leafy", TERRA, 2);
+  pottedPlant(img, 106, h - 4, "flower", TERRA, 5);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
-const bayerish = (x: number, y: number) => ((x + y * 3) & 3) !== 0;
 
-/** Modern house (96 × 96): white cube, flat roof, big windows, carport slab. */
+/** Modern house (96 × 96): white render + vertical timber cladding, flat slab roofs with shadow, glass balcony, carport. */
 function modernHouse(): RgbaImage {
   const w = 96, h = 96;
   const img = createImage(w, h);
-  wall(img, 4, 26, 60, 66, WHITEWALL, 0.8);
-  wall(img, 64, 50, 30, 42, CONCRETE, 0.7);
-  rect(img, 2, 22, 64, 4, STEEL[2]!); // flat roof slab
-  hline(img, 2, 65, 22, STEEL[4]!);
-  rect(img, 62, 46, 34, 4, STEEL[2]!); // carport roof
-  hline(img, 62, 95, 46, STEEL[4]!);
-  vline(img, 93, 50, h - 5, STEEL[3]!);
-  for (let y = 30; y < 50; y++) for (let x = 8; x < 20; x++) setPx(img, x, y, pick(TEAK, 0.65 - ((x - 8) % 3 === 0 ? 0.2 : 0), x, y, 0.2)); // wood slats
-  win(img, 24, 30, 34, 18, STEEL, 2);
-  win(img, 10, 60, 24, 22, STEEL, 1);
-  door(img, 40, 62, 12, 26, TEAK);
-  rect(img, 46, 52, 6, 3, WARM[2]!);
-  markNight(img, "light", () => rect(img, 46, 52, 6, 3, WARM[4]!));
-  // potted tree
-  rect(img, 54, h - 12, 6, 8, CONCRETE[1]!);
-  for (let k = 0; k < 30; k++) setPx(img, 57 + Math.round(Math.cos(k * 1.7) * (2 + (k % 3))), h - 16 - (k % 7), GREEN[2 + (k % 3)]!);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 4, 18, 54, h - 21, WALL_WHITE, 21, [48]);
+  boards(img, 6, 22, 14, 33, TEAK, 4, 3);
+  framedWindow(img, 26, 24, 26, 16, STEEL, { panes: 3, curtain: rgb("#d8d0c4") });
+  rail(img, 23, 56, 41, 6, STEEL, 4); // glass-edge balcony rail
+  ledge(img, 2, 60, 48, WALL_WHITE, 2);
+  // lower right wing: clapboard + carport slab
+  clapboard(img, 58, 52, 35, h - 55, TEAK, 8);
+  glassPane(img, 62, 60, 28, h - 64, (x, y) => (y > h - 72 ? mix(TEAK[2]!, SHADOW, 0.2) : x % 14 === 0 ? STEEL[2]! : mix(rgb("#3a2e30"), WARM[1]!, x > 14 ? 0.4 : 0.1)), 0.3, "window-lit");
+  bevel(img, 61, 59, 30, 1, STEEL, 4);
+  rect(img, 52, 46, 43, 4, WALL_WHITE[3]!); hline(img, 52, 94, 46, WALL_WHITE[5]!); hline(img, 52, 94, 49, WALL_WHITE[1]!);
+  shadeArea(img, 52, 50, 43, 4, 0.32);
+  // roof slab with parapet
+  rect(img, 1, 13, 60, 5, WALL_WHITE[3]!); hline(img, 1, 60, 13, WALL_WHITE[5]!); hline(img, 1, 60, 17, WALL_WHITE[1]!);
+  shadeArea(img, 4, 18, 54, 4, 0.3);
+  waterTank(img, 47, 12, 5);
+  // ground floor
+  framedWindow(img, 9, 58, 18, 18, STEEL, { panes: 2 });
+  panelDoor(img, 34, 62, 12, h - 66, TEAK, STEEL);
+  wallLamp(img, 47, 58);
+  acUnit(img, 32, 26 + 26);
+  pottedPlant(img, 52, h - 4, "snake", CONCRETE, 3);
+  pottedPlant(img, 6, h - 4, "flower", TERRA, 7);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Malay kampung house (112 × 112): stilts, painted wooden walls, tall pitched zinc roof, front steps, louvred windows. */
+/** Malay kampung house (112 × 112): teal board walls, louvred windows with lattice vents, tiled stair, tiled roof with a zig-zag fascia. */
 function kampungHouse(): RgbaImage {
   const w = 112, h = 112;
   const img = createImage(w, h);
-  for (const x of [14, 38, 62, 86, 96]) for (let y = 70; y < h - 4; y++) { setPx(img, x, y, TEAK[2]!); setPx(img, x + 1, y, TEAK[0]!); }
-  planks(img, 12, 42, 88, 28, TEAL, 11);
-  hline(img, 10, 102, 70, TEAK[1]!);
-  hline(img, 10, 102, 71, TEAK[4]!);
-  // louvred windows
-  for (const wx of [20, 72]) { bevel(img, wx - 1, 46, 16, 16, WHITEWALL, 3); for (let y = 47; y < 61; y++) for (let x = wx; x < wx + 14; x++) setPx(img, x, y, (y - 47) % 3 === 2 ? TEAK[1]! : pick(TEAK, 0.7, x, y, 0.2)); markNight(img, "window-lit", () => { for (let y = 47; y < 61; y += 3) hline(img, wx, wx + 13, y + 1, WARM[2]!); }); }
-  door(img, 48, 46, 14, 24, YELLOW);
-  pitched(img, 12, 100, 42, 34, ZINC, 8, 0.9);
-  // decorative fascia board (plain zigzag cut, no script)
-  for (let x = 4; x < 108; x++) setPx(img, x, 43 + ((x >> 1) & 1), WHITEWALL[4]!);
-  // steps
-  for (let i = 0; i < 9; i++) { hline(img, 48 - i * 2, 62 + i * 2, 72 + i * 4, CONCRETE[4]!); hline(img, 48 - i * 2, 62 + i * 2, 73 + i * 4, CONCRETE[2]!); }
-  // hibiscus bush
-  for (let k = 0; k < 40; k++) setPx(img, 100 + Math.round(Math.cos(k * 2.1) * (3 + (k % 4))), h - 8 - (k % 8), k % 9 === 0 ? RED[4]! : GREEN[2 + (k % 3)]!);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  const T = TEAL;
+  underShade(img, 10, 102, 72, h - 4);
+  for (const x of [11, 33, 75, 99]) post(img, x, 70, h - 4, CONCRETE);
+  // tiled front stair (blue-white tiles on the risers)
+  for (let i = 0; i < 9; i++) {
+    const sy = 72 + i * 4, x0 = 47 - (i >> 1), x1 = 63 + (i >> 1);
+    hline(img, x0, x1, sy, CONCRETE[5]!);
+    for (let y = sy + 1; y < sy + 4; y++) for (let x = x0; x <= x1; x++) setPx(img, x, y, y === sy + 3 ? CONCRETE[2]! : ((x >> 2) + (y >> 1)) % 2 ? BLUE_POT[3]! : CLOTH[2]!);
+    shadeArea(img, x0, sy + 1, x1 - x0 + 1, 1, 0.25);
+  }
+  for (const s of [-1, 1]) { const bx = s < 0 ? 45 : 65; for (let y = 66; y < h - 4; y++) { setPx(img, bx + s * Math.round((y - 66) / 8), y, WHITE); if (y % 6 === 0) vline(img, bx + s * Math.round((y - 66) / 8), y, y + 5, CLOTH[1]!); } }
+  bevel(img, 6, 68, 100, 4, TEAK, 3);
+  boards(img, 10, 38, 92, 30, T, 6, 4);
+  hline(img, 10, 101, 38, WHITE); hline(img, 10, 101, 66, WHITE);
+  for (const x of [10, 54, 101]) vline(img, x, 38, 67, WHITE);
+  // louvred windows + lattice vent above
+  for (const wx of [18, 78]) {
+    bevel(img, wx - 2, 41, 20, 4, WALL_WHITE, 3);
+    for (let y = 42; y < 44; y++) for (let x = wx; x < wx + 16; x++) if ((x + y) % 3 === 0) setPx(img, x, y, T[0]!);
+    framedWindow(img, wx, 47, 16, 16, WALL_WHITE, { panes: 2, curtain: rgb("#f0d8a0") });
+    for (let y = 47; y < 63; y += 3) hline(img, wx, wx + 15, y, mix(T[4]!, WHITE, 0.4)); // louvres
+  }
+  panelDoor(img, 46, 44, 18, 24, TEAK, WALL_WHITE, true);
+  // roof + zig-zag fascia (papan cantik)
+  tileRoof(img, 2, 109, 34, 30, TERRA, 18, 8, WALL_WHITE);
+  for (let x = -3; x < w + 3; x++) { const k = x % 6; const d = k < 3 ? k : 6 - k; for (let yy = 0; yy <= d; yy++) setPx(img, x, 37 + yy, yy === d ? WALL_WHITE[2]! : WHITE); }
+  pottedPlant(img, 38, 72, "flower", BLUE_POT, 4);
+  pottedPlant(img, 72, 72, "leafy", BLUE_POT, 9);
+  pottedPlant(img, 104, h - 4, "palm", TERRA, 6);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Chinese shophouse (112 × 160): two storeys, arched shuttered windows, five-foot way, red lanterns, fabric shop below. */
+/** Chinese shophouse ร้านผ้า (112 × 160): tiled roof, cream render with pilasters, arched windows with green shutters, arcade + fabric shop. */
 function chineseShophouse(): RgbaImage {
   const w = 112, h = 160;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#e8c48a");
-  wall(img, 0, 24, w, h - 28, WALL, 0.78);
-  // tiled eave + parapet
-  rect(img, 0, 16, w, 8, ROOF_TILE[2]!);
-  for (let x = 0; x < w; x += 4) vline(img, x, 16, 23, ROOF_TILE[0]!);
-  hline(img, 0, w - 1, 15, ROOF_TILE[4]!);
-  for (let y = 4; y < 15; y++) hline(img, 10, w - 11, y, pick(WALL, 0.85 - (y - 4) / 30, 10, y, 0.3));
-  for (let x = 14; x < w - 14; x += 10) rect(img, x, 7, 6, 5, mix(WALL[2]!, TEAL[3]!, 0.5)); // ventilation tiles (geometric)
-  // upper floor: three arched windows with green shutters
-  for (const wx of [12, 46, 80]) {
-    for (let y = 36; y < 70; y++) for (let x = wx; x < wx + 20; x++) {
-      const dx = x - (wx + 9.5), arch = y < 46 ? Math.sqrt(Math.max(0, 100 - (46 - y) ** 2)) : 99;
-      if (Math.abs(dx) > arch) continue;
-      setPx(img, x, y, Math.abs(dx) < 5 ? pick(GLASS, 0.55 - (y - 36) / 90, x, y, 0.3) : pick(GREEN, 0.6 - (x % 2) * 0.12, x, y, 0.2));
-    }
-    hline(img, wx - 2, wx + 21, 70, WALL[1]!);
-    markNight(img, "window-lit", () => { for (let y = 40; y < 70; y++) for (let x = wx + 5; x < wx + 15; x++) setPx(img, x, y, getPx(img, x, y)); });
+  const C = WALL_CREAM;
+  const SH = shadeRamp("#3f8a62");
+  renderWall(img, 2, 18, 108, h - 21, C, 31, [26, 86]);
+  // pilasters
+  for (const px of [2, 103]) { for (let y = 18; y < h - 3; y++) for (let x = px; x < px + 7; x++) setPx(img, x, y, pick(C, x === px ? 0.95 : x === px + 6 ? 0.35 : 0.66, x, y, 0.3)); bevel(img, px - 1, 22, 9, 3, C, 3); }
+  // upper floor: three arched windows with open green shutters
+  for (const wx of [17, 49, 81]) {
+    for (let y = 30; y < 38; y++) for (let x = wx - 2; x < wx + 16; x++) if (Math.hypot(x - (wx + 6.5), y - 38) < 10.5) setPx(img, x, y, C[2]!);
+    shutters(img, wx, 38, 13, 26, SH);
+    glassPane(img, wx, 30, 14, 34, (x, y) => (y < 8 ? (Math.hypot(x - 6.5, y - 8) > 7.5 ? undefined : (x + y) % 4 === 0 ? WHITE : rgb("#3a3040")) : x < 4 || x > 9 ? rgb("#c8a868") : rgb("#2a2232")), 0.3, "window-lit");
+    for (let y = 30; y < 38; y++) for (let x = wx; x < wx + 14; x++) if (Math.hypot(x - (wx + 6.5), y - 38) > 7.5) setPx(img, x, y, C[3]!);
+    hline(img, wx - 3, wx + 16, 66, C[5]!); hline(img, wx - 3, wx + 16, 67, C[2]!);
   }
-  hline(img, 0, w - 1, 80, WALL[5]!);
-  rect(img, 0, 81, w, 4, WALL[1]!);
-  // five-foot way: columns + shop front with fabric rolls
-  for (let y = 85; y < h - 4; y++) for (let x = 0; x < w; x++) setPx(img, x, y, mix(pick(WALL, 0.5, x, y, 0.3), SHADOW, 0.3));
-  for (const cx of [0, 52, 104]) for (let y = 85; y < h - 4; y++) hline(img, cx, cx + 7, y, pick(WALL, 0.8 - (y - 85) / 200, cx, y, 0.3));
-  board(img, "fabric", 56, 88, RED.slice(1), YELLOW[4]!, 6, 2);
-  for (let i = 0; i < 9; i++) { const pal = [RED, BLUE, GREEN, YELLOW, PINK, TEAL][i % 6]!; for (let y = 108; y < 140; y++) for (let x = 12 + i * 10; x < 19 + i * 10; x++) if (x < 100 && !(x >= 52 && x < 60)) setPx(img, x, y, pick(pal, 0.75 - (x % 7) / 12, x, y, 0.3)); }
-  rect(img, 10, 140, 92, 12, TEAK[2]!);
-  hline(img, 10, 101, 140, TEAK[4]!);
-  // red lanterns (plain)
-  for (const lx of [26, 86]) { vline(img, lx, 85, 89, INK); for (let y = 90; y < 98; y++) for (let x = lx - 4; x <= lx + 4; x++) { const dx = (x - lx) / 4.5, dy = (y - 94) / 4.2; if (dx * dx + dy * dy <= 1) setPx(img, x, y, pick(RED, 0.8 - dx * 0.4 - dy * 0.2, x, y, 0.3)); } hline(img, lx - 2, lx + 2, 89, YELLOW[3]!); hline(img, lx - 2, lx + 2, 98, YELLOW[3]!); markNight(img, "light", () => { for (let y = 91; y < 97; y++) hline(img, lx - 2, lx + 2, y, ORANGE[4]!); }); }
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  rail(img, 9, 102, 72, 7, SH, 3);
+  for (const px of [18, 56, 92]) pottedPlant(img, px, 71, px === 56 ? "flower" : "leafy", TERRA, px);
+  ledge(img, 0, w - 1, 82, C, 3);
+  // roof tiles behind a stepped parapet
+  for (let y = 2; y < 14; y++) for (let x = 6 + (14 - y) >> 1; x < w - 6; x++) { const r = (y - 2) % 3; setPx(img, x, y, pick(ROOF_TILE, (r === 0 ? 0.9 : r === 2 ? 0.3 : 0.62) - (x % 5 === 0 ? 0.2 : 0), x, y, 0.3)); }
+  bevel(img, 0, 13, w, 6, C, 3);
+  ledge(img, 0, w - 1, 18, C, 2);
+  // ground floor: sign, lanterns, arcade opening with fabric bolts
+  signBoard(img, "fabric", w / 2, 88, RED, YELLOW[4]!, { padX: 10, padY: 3, trim: YELLOW[2], lit: false });
+  const ix0 = 12, ix1 = 99, iy0 = 108, iy1 = h - 5;
+  for (let y = iy0; y <= iy1; y++) for (let x = ix0; x <= ix1; x++) {
+    const ly = y - iy0, lx = x - ix0;
+    let c: Rgb = mix(rgb("#3a2c30"), WARM[1]!, Math.max(0, 0.35 - Math.abs(lx - 44) / 120));
+    if (y > iy1 - 3) c = (lx + (ly % 2) * 3) % 6 < 3 ? TEAK[2]! : TEAK[1]!;
+    else if (ly % 12 === 0) c = TEAK[4]!;
+    else if (lx > 6 && lx < 82 && ly < 36) { // shelves of rolled cloth: each bolt is a lit cylinder end
+      const bolt = Math.floor(lx / 5), u = lx % 5;
+      const pal = [RED, BLUE, YELLOW, GREEN, PINK, ORANGE, TEAL, NAVY][Math.floor(hash(bolt, Math.floor(ly / 12), 4) * 8)]!;
+      if (u < 4) c = pick(pal, u === 0 ? 0.85 : u === 3 ? 0.3 : 0.6, x, y, 0.2);
+    } else if (ly >= 36 && lx > 20 && lx < 70) c = ly === 36 ? TEAK[5]! : ly < 40 ? [RED[3]!, YELLOW[3]!, BLUE[3]!, CLOTH[2]!][Math.floor(lx / 6) % 4]! : TEAK[2]!; // counter with folded cloth
+    setPx(img, x, y, c);
+  }
+  markNight(img, "window-lit", () => { for (let y = iy0; y < iy1 - 3; y++) for (let x = ix0; x <= ix1; x++) setPx(img, x, y, getPx(img, x, y)); });
+  shadeArea(img, ix0, iy0, ix1 - ix0 + 1, 5, 0.35);
+  for (const sx of [ix0, ix1 - 6]) for (let x = sx; x < sx + 7; x++) for (let y = iy0; y <= iy1; y++) setPx(img, x, y, pick(TEAK, (x - sx) % 3 === 0 ? 0.3 : 0.62, x, y, 0.2)); // folded shutter boards
+  redLantern(img, 20, 102); redLantern(img, 91, 102);
+  pottedPlant(img, 6, h - 4, "palm", TERRA, 3);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 
-/** Shophouse variant (112 × 144): two storeys, colored facade, a shop sign and shop goods. */
-function shophouseVariant(facade: string, sign: ThaiSignKey, signPal: Rgb[], goods: "paper" | "clothes"): () => RgbaImage {
-  return () => {
-    const w = 112, h = 144;
-    const img = createImage(w, h);
-    const WALL = shadeRamp(facade);
-    wall(img, 0, 12, w, h - 16, WALL, 0.78);
-    rect(img, 0, 8, w, 6, WALL[1]!);
-    hline(img, 0, w - 1, 8, WALL[5]!);
-    for (const wx of [10, 44, 78]) { win(img, wx, 24, 24, 26, WHITEWALL, 1); for (let x = wx - 2; x < wx + 26; x += 3) vline(img, x, 54, 60, STEEL[3]!); hline(img, wx - 3, wx + 26, 53, STEEL[4]!); hline(img, wx - 3, wx + 26, 61, STEEL[2]!); }
-    rect(img, 0, 66, w, 4, WALL[1]!);
-    hline(img, 0, w - 1, 70, WALL[5]!);
-    board(img, sign, w / 2, 73, signPal, WHITE, 8, 3);
-    // open shop front with goods
-    for (let y = 92; y < h - 4; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, mix(pick(WALL, 0.4, x, y, 0.3), SHADOW, 0.45));
-    markNight(img, "interior", () => { for (let y = 92; y < h - 4; y++) for (let x = 6; x < w - 6; x++) setPx(img, x, y, getPx(img, x, y)); });
-    if (goods === "paper") {
-      for (const sy of [100, 114, 128]) { hline(img, 10, w - 11, sy, TEAK[4]!); for (let x = 12; x < w - 12; x += 4) { const pal = [BLUE, RED, YELLOW, GREEN, WHITEWALL][(x / 4) % 5 | 0]!; rect(img, x, sy - 8, 3, 8, pal[3]!); setPx(img, x, sy - 8, pal[5]!); } }
-    } else {
-      for (const ry of [98, 118]) { hline(img, 10, w - 11, ry, STEEL[4]!); for (let x = 12; x < w - 16; x += 9) shirt(img, x, ry + 1, [RED, BLUE, GREEN, YELLOW, PINK, TEAL, WHITEWALL][(x / 9) % 7 | 0]!); }
-    }
-    rect(img, 0, h - 4, w, 1, CONCRETE[4]!);
-    for (let y = h - 3; y < h; y++) hline(img, 0, w - 1, y, CONCRETE[2]!);
-    selOutline(img, 0.4);
-    return img;
-  };
-}
+/** Thai shophouse variants (112 × 144) drawn by the same painter as the town shophouses: sign, awning-free open front, rail, AC, vents. */
+const shophouseStationery = shophouse({ floors: 2, wallHex: "#8fb4d8", kind: "stationery", shutter: "open", seed: 53 });
+const shophouseClothes = shophouse({ floors: 2, wallHex: "#e3a3b5", kind: "clothes", shutter: "open", seed: 61 });
 
-/** A shirt on a hanger (9 × 12), hanging from y. */
 function shirt(img: RgbaImage, x: number, y: number, pal: Rgb[]): void {
   setPx(img, x + 4, y, STEEL[3]!);
   hline(img, x + 2, x + 6, y + 1, STEEL[3]!);
@@ -780,8 +960,7 @@ function fleaBanner(): RgbaImage {
 export const TOWN_MORE_DRAW = {
   pickup, tuktuk, scooter, songthaew, bus, truck, taxi,
   thaiWoodHouse, modernHouse, kampungHouse, chineseShophouse,
-  shophouseStationery: shophouseVariant("#8fb4d8", "stationery", BLUE.slice(1), "paper"),
-  shophouseClothes: shophouseVariant("#e3a3b5", "clothes", PINK.slice(1), "clothes"),
+  shophouseStationery, shophouseClothes,
   hospital, policeStation, postOffice, bank, districtOffice, companyOffice,
   fleaClothesA: fleaClothesStall(TARP, 0), fleaClothesB: fleaClothesStall(RED, 3), fleaJunk: fleaJunkStall, clothesRack, fleaBanner,
 };

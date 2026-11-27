@@ -851,9 +851,12 @@ export function shophouse(o: ShophouseOpts): () => RgbaImage {
     });
     // ground floor: sign board, shutter drum, opening
     const sign = SHOP_SIGN[o.kind];
-    bevel(img, 8, groundTop + 2, 96, 14, sign.board, 2);
-    hline(img, 9, 102, groundTop + 3, sign.board[4]!);
-    signText(img, sign.key, 56 - Math.ceil(signW(sign.key) / 2), groundTop + 3 + Math.floor((12 - signH(sign.key)) / 2), sign.text, sign.board[0]);
+    // taller words (Sarabun Pixel with tone marks) grow the board upward over the ledge; 12 px words keep the old board
+    const sbH = Math.max(14, signH(sign.key) + 3);
+    const sbY = groundTop + 2 - (sbH - 14);
+    bevel(img, 8, sbY, 96, sbH, sign.board, 2);
+    hline(img, 9, 102, sbY + 1, sign.board[4]!);
+    signText(img, sign.key, 56 - Math.ceil(signW(sign.key) / 2), sbY + 1 + Math.floor((sbH - 2 - signH(sign.key)) / 2), sign.text, sign.board[0]);
     if (o.kind === "pharmacy") for (const px of [18, 94]) { rect(img, px - 1, groundTop + 5, 3, 8, GREEN[5]!); rect(img, px - 4, groundTop + 8, 9, 2, GREEN[5]!); }
     if (o.kind === "coffee") for (const px of [18, 94]) { rect(img, px - 3, groundTop + 6, 6, 5, CLOTH[3]!); setPx(img, px + 3, groundTop + 7, CLOTH[3]!); setPx(img, px + 3, groundTop + 8, CLOTH[3]!); hline(img, px - 4, px + 3, groundTop + 12, CLOTH[2]!); }
     if (o.kind === "gold") for (const px of [18, 94]) for (let k = 0; k < 4; k++) hline(img, px - k, px + k, groundTop + 6 + k, YELLOW[5 - (k >> 1)]!);

@@ -348,14 +348,15 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         name: z.object({ th: z.string(), en: z.string(), ms: z.string().optional() }).optional(),
         town: z.string().optional().describe("Overworld town id (for the exits back)"),
         map: z.string().optional().describe("Overworld map id (for the exits back)"),
+        more: z.boolean().optional().describe("DSK-6 annex: more houses, civic buildings / offices, a ตลาดนัดมือสอง flea market and parked vehicles after the street (old street unchanged)"),
         export: ExportList,
         dir: z.string().optional().describe("Export parent folder (default workspace exports/)"),
         night: z.boolean().optional().describe("Also export the night version: <base>_night.tscn / _night.pixi.json / _night_preview.png, art under night/"),
       },
     },
-    async ({ id, kind, seed, name, town, map, export: ex, dir, night }) => {
+    async ({ id, kind, seed, name, town, map, more, export: ex, dir, night }) => {
       try {
-        const spec: TownSceneSpec = { id, kind, seed: seed ?? 1, ...(name ? { name } : {}), ...(town ? { town } : {}), ...(map ? { map } : {}) };
+        const spec: TownSceneSpec = { id, kind, seed: seed ?? 1, ...(name ? { name } : {}), ...(town ? { town } : {}), ...(map ? { map } : {}), ...(more ? { more: true } : {}) };
         const out = dir ? resolveOutDir(root, dir, "exports") : undefined;
         await initWorkspace(root); // sample parts (same as the CLI's `town`)
         return townResult(await composeTowns(root, [spec], { export: ex, out, trustedPaths: false, night }));
@@ -373,16 +374,18 @@ export function createEasySceneMcp(workspaceRoot: string): McpServer {
         "Read an Easy Tilemap overworld map (maps/<id>.json with an overworld block) and compose one side-view street per town (its kind, seed, Thai/English/Malay name and scene id), optionally exporting them for the overworld's Godot / Pixi game (easytilemap export --town-scenes <dir>).",
       inputSchema: {
         map: z.string().describe("Path to the Easy Tilemap map JSON (inside the workspace or an allowed folder)"),
+        more: z.boolean().optional().describe("DSK-6 annex: more houses, civic buildings / offices, a ตลาดนัดมือสอง flea market and parked vehicles after the street (old street unchanged)"),
         export: ExportList,
         dir: z.string().optional().describe("Export parent folder (default workspace exports/)"),
         night: z.boolean().optional().describe("Also export the night version: <base>_night.tscn / _night.pixi.json / _night_preview.png, art under night/"),
       },
     },
-    async ({ map, export: ex, dir, night }) => {
+    async ({ map, more, export: ex, dir, night }) => {
       try {
         const file = resolveOutDir(root, map, "");
         const doc = JSON.parse(await readFile(file, "utf8"));
         const { specs, warnings } = townSpecsFromOverworld(doc);
+        if (more) for (const sp of specs) sp.more = true;
         if (!specs.length) return err(`No overworld towns in ${map}${warnings.length ? `: ${warnings.join("; ")}` : ""}`);
         const out = dir ? resolveOutDir(root, dir, "exports") : undefined;
         await initWorkspace(root);

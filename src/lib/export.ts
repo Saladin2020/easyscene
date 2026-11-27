@@ -646,6 +646,14 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
       }
       const props = [];
       const written = new Set<string>();
+      // town life: shops with an open / closed twin get both images; stalls and counters carry the seller-behind split
+      const shopOf = (id: string) => { const m = assets.meta(id); return m?.kind === "prop" ? m.shop : undefined; };
+      const twinIds = doc.props.map((p) => shopOf(p.part)?.closed ?? shopOf(p.part)?.open);
+      let twin: { doc: SceneDoc; assets: SceneAssets } | null = null;
+      if (twinIds.some(Boolean)) {
+        const tDay: SceneDoc = { ...dayDoc, props: dayDoc.props.map((p, i) => (twinIds[i] ? { ...p, part: twinIds[i]! } : p)) };
+        twin = night ? nightScene(tDay, await loadNightAssets(root, tDay)) : { doc: tDay, assets: await loadAssets(root, tDay) };
+      }
       for (let i = 0; i < doc.props.length; i++) {
         const p = doc.props[i]!;
         const img = propImage(doc, assets, i);
@@ -655,7 +663,26 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
           await files.png(rel, img);
           written.add(rel);
         }
-        props.push({ part: p.part, image: rel, x: p.x, y: p.y - img.height, width: img.width, height: img.height, flipX: Boolean(p.flipX), layer: propLayerOf(doc, assets, i) });
+        const entry: Record<string, unknown> = { part: p.part, image: rel, x: p.x, y: p.y - img.height, width: img.width, height: img.height, flipX: Boolean(p.flipX), layer: propLayerOf(doc, assets, i) };
+        const sm = shopOf(p.part);
+        if (sm) {
+          const shop: Record<string, unknown> = {};
+          const tImg = twin && twinIds[i] ? propImage(twin.doc, twin.assets, i) : undefined;
+          if (twin && tImg && tImg.width === img.width && tImg.height === img.height) {
+            const tRel = `${pre}props/${propVariantKey(twin.doc.props[i]!)}.png`;
+            if (!written.has(tRel)) {
+              await files.png(tRel, tImg);
+              written.add(tRel);
+            }
+            const isOpen = !sm.open;
+            Object.assign(shop, { open: isOpen, openImage: isOpen ? rel : tRel, closedImage: isOpen ? tRel : rel, openPart: isOpen ? p.part : twinIds[i], closedPart: isOpen ? twinIds[i] : p.part });
+          }
+          if (sm.counterTop !== undefined) shop.counterTop = sm.counterTop;
+          const seller = sm.seller ?? (shopOf(twinIds[i] ?? "")?.seller);
+          if (seller) shop.seller = { x: p.x + (p.flipX ? img.width - seller.x : seller.x), y: p.y - img.height + seller.y };
+          entry.shop = shop;
+        }
+        props.push(entry);
       }
       const characters = [];
       const sheetRel = new Map<string, string>();
@@ -754,6 +781,11 @@ export async function loadEasyScene(PIXI, url) {
   const world = new PIXI.Container();
   root.addChild(world);
   const charLayers = { back: new PIXI.Container(), main: new PIXI.Container(), front: new PIXI.Container() };
+  // town life: props with json.props[i].shop can swap open / closed art; a stall's counter rows (from shop.counterTop)
+  // are re-drawn in front of the characters so a seller placed at shop.seller stands BEHIND the table.
+  const shops = [];
+  const counterFronts = new PIXI.Container();
+  const crop = (t, top, h) => new PIXI.Texture({ source: t.source, frame: new PIXI.Rectangle(t.frame.x, t.frame.y + top, t.frame.width, h - top) });
   const addProps = async (which) => {
     for (const p of json.props.filter((p) => p.layer === which)) {
       const s = new PIXI.Sprite(await tex(p.image));
@@ -761,6 +793,27 @@ export async function loadEasyScene(PIXI, url) {
       s.y = p.y;
       if (p.flipX) s.scale.x = -1;
       world.addChild(s);
+      if (!p.shop) continue;
+      const sh = p.shop;
+      const texOpen = sh.openImage ? await tex(sh.openImage) : s.texture;
+      const texClosed = sh.closedImage ? await tex(sh.closedImage) : s.texture;
+      let front = null;
+      if (sh.counterTop > 0 && which === "back") {
+        front = new PIXI.Sprite(crop(s.texture, sh.counterTop, p.height));
+        front.x = s.x; front.y = p.y + sh.counterTop; front.scale.x = s.scale.x;
+        counterFronts.addChild(front);
+      }
+      const entry = { part: sh.openPart ?? p.part, prop: p, sprite: s, front, seller: sh.seller ?? null, open: sh.open !== false,
+        rect: { x: p.x, y: p.y, w: p.width, h: p.height } };
+      entry.setOpen = (open) => {
+        open = Boolean(open);
+        if (open === entry.open) return entry;
+        entry.open = open;
+        s.texture = open ? texOpen : texClosed;
+        if (front) front.texture = crop(s.texture, sh.counterTop, p.height);
+        return entry;
+      };
+      shops.push(entry);
     }
   };
   world.addChild(charLayers.back);
@@ -779,6 +832,7 @@ export async function loadEasyScene(PIXI, url) {
   world.addChild(tiles);
   const characters = charLayers.main;
   world.addChild(characters);
+  world.addChild(counterFronts);
   await addProps("front");
   world.addChild(charLayers.front);
 
@@ -851,6 +905,7 @@ export async function loadEasyScene(PIXI, url) {
     }
   }
   setCamera(0);
-  return { json, root, world, characters, charLayers, actors, update, setCamera };
+  const setShopOpen = (part, open) => { for (const sh of shops) if (sh.part === part || sh.prop.part === part) sh.setOpen(open); };
+  return { json, root, world, characters, charLayers, actors, update, setCamera, shops, setShopOpen, counterFronts };
 }
 `;

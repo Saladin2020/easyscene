@@ -7,9 +7,11 @@ import path from "node:path";
 
 const ws = mkdtempSync(path.join(os.tmpdir(), "easyscene-smoke-"));
 
+// node + the tsx CLI directly (spawning "npx" fails on Windows without a shell)
+const tsx = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
 const transport = new StdioClientTransport({
-  command: "npx",
-  args: ["tsx", "src/mcp/server.ts", "--workspace", ws],
+  command: process.execPath,
+  args: [tsx, "src/mcp/server.ts", "--workspace", ws],
   cwd: process.cwd(),
   env: { ...process.env },
 });

@@ -28,7 +28,7 @@ describe("backward compatibility with scenes from before the overworld work", ()
       for (const e of await readdir(res.dir, { recursive: true, withFileTypes: true })) {
         if (!e.isFile()) continue;
         const f = path.join(e.parentPath, e.name);
-        files[`${preset}/${path.relative(res.dir, f)}`] = sha(await readFile(f));
+        files[`${preset}/${path.relative(res.dir, f).split(path.sep).join("/")}`] = sha(await readFile(f));
       }
     }
     expect(files).toEqual(golden[id]);
@@ -42,7 +42,7 @@ describe("backward compatibility with scenes from before the overworld work", ()
       for (const e of await readdir(res.dir, { recursive: true, withFileTypes: true })) {
         if (!e.isFile()) continue;
         const f = path.join(e.parentPath, e.name);
-        files[`${preset}/${path.relative(res.dir, f)}`] = sha(await readFile(f));
+        files[`${preset}/${path.relative(res.dir, f).split(path.sep).join("/")}`] = sha(await readFile(f));
       }
     }
     expect(files).toEqual(golden[id]);

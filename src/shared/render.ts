@@ -156,6 +156,20 @@ export function renderScene(doc: SceneDoc, assets: SceneAssets, opts: RenderOpti
     });
   };
 
+  // town life: a stall's counter rows go back over the characters, so a seller stands behind the table
+  const drawCounterFronts = () => {
+    doc.props.forEach((p, i) => {
+      if (propLayerOf(doc, assets, i) !== "back") return;
+      const m = assets.meta(p.part);
+      const top = m?.kind === "prop" ? m.shop?.counterTop : undefined;
+      if (!top || top <= 0) return;
+      const img = propImage(doc, assets, i);
+      if (!img || top >= img.height) return;
+      const part = createImage(img.width, img.height - top);
+      part.data.set(img.data.subarray(top * img.width * 4));
+      blit(out, part, p.x - camX, p.y - img.height + top - camY, { flipX: p.flipX });
+    });
+  };
   const chars = [...(opts.character ? [opts.character] : []), ...(opts.characters ?? [])];
   const drawChars = (layer: CharacterLayer) => {
     for (const ch of chars) if ((ch.layer ?? "main") === layer) drawCharacter(out, doc, ch, camX, camY);
@@ -168,6 +182,7 @@ export function renderScene(doc: SceneDoc, assets: SceneAssets, opts: RenderOpti
     blit(out, tiles, -camX, -camY);
   }
   drawChars("main");
+  if (inc.props && chars.length) drawCounterFronts();
   if (inc.props) drawProps("front");
   drawChars("front");
   return out;

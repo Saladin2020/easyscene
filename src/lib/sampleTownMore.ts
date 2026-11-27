@@ -9,7 +9,12 @@
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import { type Rgb, alphaAt, getPx, hash, markNight, mix, pick, ramp, rect, rgb, selOutline, setPx, sphereLight } from "./pixelArt.js";
 import { THAI_SIGNS, type ThaiSignKey } from "./thaiSignText.js";
-import { shadeRamp } from "./sampleTown.js";
+import { TOWN_KIT, shadeRamp } from "./sampleTown.js";
+
+const K = TOWN_KIT;
+const GLINT = K.pal.GLINT;
+const CLOTH = K.pal.CLOTH;
+const line = K.line;
 
 const STEEL = ramp("#252a36", "#3e4554", "#5e6878", "#87919f", "#b4bcc6", "#e4e9ee");
 const CONCRETE = ramp("#4c4650", "#6c6468", "#90877f", "#b4aa9a", "#d4cab4", "#eee6d0");
@@ -131,150 +136,288 @@ function taillight(img: RgbaImage, x: number, y: number): void {
 }
 
 // ---------------- vehicles (facing right) ----------------
+// Scale (DSK-8): characters are ~39 px tall and doors 56–64 px, so cars are ~36–40 px tall, buses/lorries ~68 px.
+type Edge = (y: number) => number;
+/** Painted body panel between left(y)..right(y): lit top lip, ramp down, darker sill, slight right-side falloff. */
+function shell(img: RgbaImage, y0: number, y1: number, left: Edge, right: Edge, pal: Rgb[], top = 0.86, bottom = 0.34): void {
+  for (let y = y0; y <= y1; y++) {
+    const a = Math.round(left(y)), b = Math.round(right(y));
+    const v = (y - y0) / Math.max(1, y1 - y0);
+    for (let x = a; x <= b; x++) {
+      let t = top - (top - bottom) * v - ((x - a) / Math.max(1, b - a)) * 0.06;
+      if (y === y0) t = 0.98;
+      if (x === a && y > y0) t += 0.08;
+      setPx(img, x, y, pick(pal, t, x, y, 0.35));
+    }
+  }
+}
+/** Tinted glass between left(y)..right(y): sky gradient, dark top seal, two diagonal glare streaks. */
+function glass(img: RgbaImage, y0: number, y1: number, left: Edge, right: Edge, seed = 0): void {
+  for (let y = y0; y <= y1; y++) {
+    const a = Math.round(left(y)), b = Math.round(right(y));
+    for (let x = a; x <= b; x++) {
+      let c = y === y0 ? GLASS[0]! : pick(GLASS, 0.78 - ((y - y0) / Math.max(1, y1 - y0)) * 0.5 - ((x - a) / Math.max(1, b - a)) * 0.1, x, y, 0.35);
+      const d = (x + (y - y0) * 1.3 + seed) % 23;
+      if (y > y0 && d >= 3 && d < 6) c = mix(c, GLINT, 0.6);
+      else if (y > y0 && d >= 8 && d < 9) c = mix(c, GLINT, 0.35);
+      setPx(img, x, y, c);
+    }
+  }
+}
+/** Dark wheel well cut into the body above the axle. */
+function wheelWell(img: RgbaImage, cx: number, cy: number, r: number): void {
+  for (let y = cy - r - 2; y <= cy; y++) for (let x = cx - r - 2; x <= cx + r + 2; x++) {
+    const d = Math.hypot(x - cx, y - cy);
+    if (d > r + 2.3 || !alphaAt(img, x, y)) continue;
+    setPx(img, x, y, d > r + 1.3 ? mix(getPx(img, x, y), SHADOW, 0.45) : rgb("#16141c"));
+  }
+}
+/** Tyre + alloy rim: tread highlight top-left, lit rim, spokes, hub cap, darker lower-right. */
+function tyre(img: RgbaImage, cx: number, cy: number, r: number, rim: Rgb[] = STEEL): void {
+  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+    if (d > r + 0.35) continue;
+    const lit = (-dx - dy) / (r * 2);
+    let c: Rgb;
+    if (d > r - 2.2) c = d > r - 0.8 && lit > 0.12 ? TIRE[3]! : pick(TIRE, 0.45 + lit * 0.8, x, y, 0.2);
+    else if (d > r - 3.2) c = pick(rim, 0.7 + lit, x, y, 0.2);
+    else if (d < 1.5) c = rim[5]!;
+    else {
+      const ang = Math.atan2(dy, dx);
+      const spoke = Math.abs(Math.sin(ang * 2.5)) < 0.32;
+      c = spoke ? pick(rim, 0.62 + lit * 0.8, x, y, 0.2) : rgb("#24222c");
+    }
+    setPx(img, x, y, c);
+  }
+}
+function lamp(img: RgbaImage, x: number, y: number, w: number, h: number): void {
+  rect(img, x, y, w, h, WARM[3]!);
+  hline(img, x, x + w - 1, y, WARM[4]!);
+  setPx(img, x + w - 1, y + h - 1, WARM[1]!);
+  markNight(img, "light", () => rect(img, x, y, w, h, WARM[4]!));
+}
+function tail(img: RgbaImage, x: number, y: number, w: number, h: number): void {
+  rect(img, x, y, w, h, RED[2]!);
+  for (let yy = 0; yy < h - 1; yy++) setPx(img, x, y + yy, RED[4]!);
+}
+function chrome(img: RgbaImage, x0: number, x1: number, y0: number, h: number): void {
+  for (let y = y0; y < y0 + h; y++) hline(img, x0, x1, y, y === y0 ? STEEL[5]! : y === y0 + h - 1 ? STEEL[1]! : STEEL[3]!);
+}
+function seam(img: RgbaImage, x: number, y0: number, y1: number, pal: Rgb[]): void {
+  for (let y = y0; y <= y1; y++) { if (alphaAt(img, x, y)) setPx(img, x, y, pal[1]!); if (alphaAt(img, x + 1, y)) setPx(img, x + 1, y, mix(getPx(img, x + 1, y), WHITE, 0.18)); }
+}
+/** Soft contact shadow along the bottom row between the wheels. */
+function contact(img: RgbaImage, x0: number, x1: number): void {
+  const y = img.height - 1;
+  for (let x = x0; x <= x1; x++) if (!alphaAt(img, x, y)) setPx(img, x, y, SHADOW, 80);
+}
+/** Finish: own-colour outline, then re-stamp lamps so the outline never dims them. */
+function finishVehicle(img: RgbaImage, lamps: () => void, shadow: [number, number]): RgbaImage {
+  selOutline(img, 0.45);
+  lamps();
+  contact(img, shadow[0], shadow[1]);
+  return img;
+}
+const PAINT_WHITE = ramp("#6e7284", "#9498a6", "#b8bcc4", "#d6d8da", "#ecece6", "#fbfaf4");
+const PAINT_RED = shadeRamp("#c4302c");
+const PAINT_TEAL = shadeRamp("#23a092");
+const PAINT_BLUE = shadeRamp("#2f6cc8");
+const PAINT_PINK = shadeRamp("#ec5e98");
+const PAINT_ORANGE = shadeRamp("#ec7a1e");
+const PAINT_GREEN = shadeRamp("#3a8c4e");
+const BOX_GREY = ramp("#4a5060", "#6c7484", "#8e96a4", "#b0b8c2", "#d0d6dc", "#eef2f4");
+
+/** White pickup (96 × 40): cab with windscreen + side window, open bed with crates and a tarp bundle. */
 function pickup(): RgbaImage {
-  const img = createImage(64, 30);
-  const P = WHITEWALL;
-  body(img, [[30, 44], [29, 46], [28, 48]], 6, P);
-  for (let y = 9; y < 23; y++) hline(img, 2, 61 - (y < 13 ? 13 - y : 0), y, pick(P, 0.75 - (y - 9) / 30, 2, y, 0.3));
-  for (let y = 4; y < 9; y++) hline(img, 30 - (y - 4), 46 + (y - 4) * 0.6, y, pick(P, 0.85, 30, y, 0.3));
-  for (let y = 5; y < 9; y++) for (let x = 32; x < 46; x++) if (x - 32 < 13 - (8 - y)) setPx(img, x, y, pick(GLASS, 0.6 - (x - 32) / 40, x, y, 0.3));
-  hline(img, 2, 28, 9, P[5]!);
-  hline(img, 2, 28, 10, P[1]!); // bed rail
-  hline(img, 2, 61, 16, STEEL[3]!);
-  vline(img, 29, 9, 22, P[1]!);
-  vline(img, 44, 9, 20, P[2]!);
-  headlight(img, 61, 13);
-  taillight(img, 2, 12);
-  rect(img, 56, 19, 6, 3, STEEL[4]!);
-  wheel(img, 14, 23, 6);
-  wheel(img, 50, 23, 6);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(96, 40);
+  const P = PAINT_WHITE;
+  // cargo in the bed (behind the side panel)
+  bevel(img, 9, 9, 14, 9, TEAK, 3); vline(img, 16, 10, 16, TEAK[1]!); hline(img, 10, 21, 13, TEAK[2]!);
+  for (let y = 11; y < 18; y++) for (let x = 25; x < 44; x++) if (Math.hypot((x - 34) / 10, (y - 17) / 7) < 1) setPx(img, x, y, pick(TARP, 0.85 - (y - 11) / 12 - (x - 25) / 60, x, y, 0.4));
+  line(img, 26, 15, 42, 13, TARP[0]!);
+  // cab
+  shell(img, 5, 17, (y) => 51 - (y < 7 ? 7 - y : 0), (y) => 67 + (y - 5) * 1.1, P);
+  glass(img, 7, 14, () => 54, (y) => 63 + (y - 7) * 0.5, 2); // side window
+  glass(img, 7, 15, (y) => 66 + (y - 7) * 1.1, (y) => 68 + (y - 7) * 1.1, 0); // windscreen edge
+  vline(img, 65, 7, 16, P[2]!);
+  // lower body (bed + cab + hood)
+  shell(img, 17, 31, (y) => (y === 17 ? 4 : y === 31 ? 4 : 3), (y) => (y === 31 ? 91 : 92), P, 0.82, 0.4);
+  shell(img, 14, 17, () => 79, (y) => 88 + (y - 14), P, 0.95, 0.8); // hood
+  hline(img, 3, 49, 17, P[5]!); hline(img, 5, 47, 18, P[1]!); // bed rail + inner lip
+  hline(img, 4, 91, 22, P[5]!); hline(img, 4, 91, 23, P[2]!); // beltline crease
+  seam(img, 50, 17, 29, P); seam(img, 70, 17, 29, P);
+  hline(img, 64, 67, 20, STEEL[3]!); hline(img, 44, 46, 20, STEEL[3]!);
+  rect(img, 69, 13, 3, 3, P[1]!); setPx(img, 69, 13, P[4]!); // mirror
+  hline(img, 4, 91, 30, P[1]!);
+  wheelWell(img, 20, 32, 7); wheelWell(img, 76, 32, 7);
+  chrome(img, 2, 8, 27, 3); chrome(img, 87, 94, 27, 3);
+  rect(img, 88, 23, 5, 3, STEEL[1]!); for (let x = 88; x < 93; x += 2) setPx(img, x, 24, STEEL[3]!); // grille
+  tyre(img, 20, 32, 7); tyre(img, 76, 32, 7);
+  return finishVehicle(img, () => { lamp(img, 91, 19, 3, 2); tail(img, 3, 19, 2, 3); }, [10, 86]);
 }
+
+/** Blue tuk-tuk (72 × 44): canopy roof with fringe, open bench for passengers, driver cowl and windscreen. */
 function tuktuk(): RgbaImage {
-  const img = createImage(56, 36);
-  // canopy
-  for (let y = 2; y < 8; y++) hline(img, 6 + (y < 4 ? 2 : 0), 46, y, pick(BLUE, 0.78 - (y - 2) / 12, 6, y, 0.3));
-  hline(img, 6, 47, 8, YELLOW[3]!);
-  for (const x of [8, 30, 45]) vline(img, x, 8, 22, STEEL[2]!);
-  // rear passenger tub + cab
-  for (let y = 18; y < 28; y++) hline(img, 4, 40, y, pick(BLUE, 0.7 - (y - 18) / 30, 4, y, 0.3));
-  hline(img, 4, 40, 18, BLUE[5]!);
-  for (let y = 20; y < 26; y++) hline(img, 6, 26, y, pick(RED, 0.55, 6, y, 0.3)); // bench seat
-  hline(img, 4, 40, 23, YELLOW[3]!);
-  // front cowl over the single wheel
-  for (let y = 14; y < 28; y++) { const x1 = 52 - Math.max(0, 16 - y); for (let x = 40; x <= x1; x++) setPx(img, x, y, pick(BLUE, 0.8 - (y - 14) / 30 - (x - 40) / 50, x, y, 0.3)); }
-  for (let y = 9; y < 14; y++) hline(img, 44, 50 - (13 - y), y, pick(GLASS, 0.65, 44, y, 0.3)); // windscreen
-  vline(img, 50, 8, 14, STEEL[3]!);
-  headlight(img, 52, 17);
-  taillight(img, 4, 21);
-  hline(img, 34, 40, 15, STEEL[4]!); // handlebar
-  wheel(img, 12, 29, 5);
-  wheel(img, 46, 29, 5);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(72, 44);
+  const P = PAINT_BLUE;
+  // posts
+  for (const x of [6, 46]) { vline(img, x, 9, 30, STEEL[4]!); vline(img, x + 1, 9, 30, STEEL[2]!); }
+  // bench + interior
+  for (let y = 12; y < 24; y++) hline(img, 8, 45, y, mix(rgb("#2a2238"), P[0]!, 0.3));
+  bevel(img, 10, 14, 26, 9, RED, 3); hline(img, 11, 34, 18, RED[2]!);
+  vline(img, 30, 10, 22, STEEL[3]!); // grab pole
+  // canopy roof
+  shell(img, 2, 8, (y) => 4 - (y > 3 ? 1 : 0) + (y === 2 ? 2 : 0), (y) => 58 + (y === 2 ? -2 : 0), P, 0.95, 0.55);
+  hline(img, 3, 57, 3, P[5]!);
+  for (let x = 3; x <= 58; x++) { const k = x % 6; setPx(img, x, 9, k < 3 ? YELLOW[4]! : WHITE); if (k === 1 || k === 4) setPx(img, x, 10, k < 3 ? YELLOW[2]! : CLOTH[1]!); }
+  // body
+  shell(img, 23, 35, (y) => (y < 25 ? 4 : 3), () => 52, P, 0.8, 0.38);
+  shell(img, 14, 35, (y) => 48 - (y < 16 ? 0 : 0), (y) => Math.min(69, 58 + (y - 14) * 0.8), P, 0.9, 0.36); // driver cowl
+  glass(img, 9, 17, (y) => 54 + (y - 9) * 0.4, (y) => 58 + (y - 9) * 0.5, 1); // windscreen
+  vline(img, 53, 9, 18, STEEL[2]!);
+  hline(img, 4, 68, 27, YELLOW[3]!); hline(img, 4, 68, 28, YELLOW[1]!); // trim stripe
+  for (let x = 8; x < 44; x += 6) setPx(img, x, 31, P[5]!); // rivets
+  hline(img, 50, 56, 20, TIRE[1]!); hline(img, 50, 50, 19, STEEL[4]!); // handlebar
+  rect(img, 6, 33, 10, 2, STEEL[3]!); // step
+  wheelWell(img, 20, 36, 7); wheelWell(img, 60, 36, 7);
+  tyre(img, 20, 36, 7); tyre(img, 60, 36, 7);
+  return finishVehicle(img, () => { lamp(img, 67, 22, 2, 3); tail(img, 3, 25, 2, 3); }, [12, 66]);
 }
+
+/** Teal scooter (48 × 32): rounded rear cowl, dark seat, leg shield, front fender, mirrors. */
 function scooter(): RgbaImage {
-  const img = createImage(40, 28);
-  wheel(img, 8, 22, 5);
-  wheel(img, 32, 22, 5);
-  for (let y = 12; y < 20; y++) for (let x = 4; x < 22; x++) { const dx = (x - 13) / 9, dy = (y - 16) / 4; if (dx * dx + dy * dy <= 1.1) setPx(img, x, y, pick(TEAL, 0.8 - dy * 0.3 - dx * 0.2, x, y, 0.3)); }
-  for (let x = 6; x < 20; x++) { setPx(img, x, 10, rgb("#2a2630")); setPx(img, x, 11, rgb("#1a1820")); }
-  hline(img, 18, 28, 19, STEEL[3]!);
-  for (let y = 6; y < 19; y++) for (let x = 26; x < 30; x++) setPx(img, x - Math.floor((y - 6) * 0.25), y, pick(TEAL, 0.85 - (x - 26) * 0.12, x, y, 0.3));
-  for (let y = 2; y < 6; y++) setPx(img, 27, y, STEEL[2]!);
-  hline(img, 24, 31, 2, STEEL[4]!);
-  headlight(img, 31, 8);
-  taillight(img, 3, 14);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(48, 32);
+  const P = PAINT_TEAL;
+  line(img, 34, 10, 39, 25, STEEL[2]!); line(img, 35, 10, 40, 25, STEEL[4]!); // fork
+  shell(img, 13, 23, (y) => 4 + Math.abs(y - 18) * 0.55, (y) => 24 - (y > 20 ? (y - 20) * 2 : 0), P, 0.9, 0.35); // rear cowl
+  shell(img, 20, 23, () => 18, () => 34, STEEL, 0.6, 0.3); // floorboard
+  shell(img, 7, 22, (y) => 33 - (y - 7) * 0.12, (y) => 37 + (y - 7) * 0.25, P, 0.92, 0.42); // leg shield
+  for (let x = 32; x <= 45; x++) { const y = 17 + Math.round(((x - 39) ** 2) / 22); setPx(img, x, y, P[4]!); setPx(img, x, y + 1, P[2]!); } // front fender
+  for (let x = 6; x <= 22; x++) { setPx(img, x, 11, TIRE[3]!); setPx(img, x, 12, TIRE[2]!); } for (let x = 7; x <= 21; x++) setPx(img, x, 10, TIRE[3]!); // seat
+  hline(img, 31, 40, 6, TIRE[1]!); setPx(img, 40, 6, STEEL[4]!); // handlebar
+  for (let y = 1; y < 6; y++) setPx(img, 34, y, STEEL[3]!); rect(img, 33, 1, 3, 2, STEEL[4]!); // mirror
+  chrome(img, 2, 13, 24, 2); // exhaust
+  hline(img, 6, 20, 16, P[5]!); // body crease highlight
+  tyre(img, 9, 25, 6); tyre(img, 39, 25, 6);
+  return finishVehicle(img, () => { lamp(img, 38, 8, 2, 2); tail(img, 4, 15, 2, 2); }, [4, 44]);
 }
+
+/** Red songthaew (112 × 52): roof rack, open-sided passenger box with bars and benches, cab, long hood. */
 function songthaew(): RgbaImage {
-  const img = createImage(80, 40);
-  // roof rack + roof
-  for (let y = 4; y < 8; y++) hline(img, 2, 50, y, pick(RED, 0.8 - (y - 4) / 10, 2, y, 0.3));
-  hline(img, 2, 50, 3, STEEL[3]!);
-  for (const x of [4, 18, 32, 48]) vline(img, x, 8, 24, STEEL[3]!);
-  // open rear with two benches
-  for (let y = 8; y < 30; y++) hline(img, 2, 50, y, y < 18 ? mix(pick(RED, 0.5, 2, y, 0.3), SHADOW, 0.55) : pick(RED, 0.72 - (y - 18) / 30, 2, y, 0.3));
-  for (let y = 18; y < 22; y++) hline(img, 6, 46, y, pick(TEAK, 0.6, 6, y, 0.2)); // bench
-  hline(img, 2, 50, 18, RED[5]!);
-  hline(img, 2, 50, 26, YELLOW[3]!);
-  vline(img, 1, 8, 30, STEEL[2]!); // grab bar at the back
-  // cab
-  for (let y = 10; y < 30; y++) { const x1 = 77 - Math.max(0, 14 - y); for (let x = 51; x <= x1; x++) setPx(img, x, y, pick(RED, 0.82 - (y - 10) / 30 - (x - 51) / 70, x, y, 0.3)); }
-  for (let y = 12; y < 18; y++) for (let x = 55; x < 70 - Math.max(0, 14 - y); x++) setPx(img, x, y, pick(GLASS, 0.62 - (x - 55) / 40, x, y, 0.3));
-  vline(img, 62, 12, 28, RED[1]!);
-  hline(img, 51, 77, 22, STEEL[3]!);
-  headlight(img, 77, 18);
-  taillight(img, 2, 22);
-  rect(img, 72, 25, 6, 3, STEEL[4]!);
-  wheel(img, 14, 32, 6);
-  wheel(img, 64, 32, 6);
-  selOutline(img, 0.42);
-  return img;
-}
-function bus(): RgbaImage {
-  const img = createImage(128, 52);
-  const BODY = ORANGE;
-  for (let y = 4; y < 44; y++) { const x1 = 125 - (y < 8 ? 8 - y : 0); for (let x = 2 + (y < 6 ? 6 - y : 0); x <= x1; x++) setPx(img, x, y, y < 28 ? pick(BODY, 0.78 - (y - 4) / 60 - (x / 128) * 0.12, x, y, 0.3) : pick(WHITEWALL, 0.75 - (y - 28) / 40, x, y, 0.3)); }
-  hline(img, 4, 122, 4, BODY[5]!);
-  hline(img, 2, 125, 28, BODY[1]!);
-  hline(img, 2, 125, 36, BODY[3]!);
-  // windows
-  for (let i = 0; i < 6; i++) win(img, 8 + i * 17, 10, 13, 12, STEEL, 0);
-  for (let y = 9; y < 26; y++) for (let x = 112; x < 124 - Math.max(0, 12 - y); x++) setPx(img, x, y, pick(GLASS, 0.65 - (x - 112) / 30, x, y, 0.3)); // windscreen
-  // door
-  for (let y = 12; y < 42; y++) for (let x = 104; x < 110; x++) setPx(img, x, y, x === 107 ? STEEL[2]! : pick(GLASS, 0.55, x, y, 0.3));
-  // route board (no text: blank lit strip)
-  rect(img, 112, 5, 10, 3, INK);
-  markNight(img, "light", () => hline(img, 113, 121, 6, WARM[3]!));
-  headlight(img, 125, 34);
-  taillight(img, 2, 30);
-  rect(img, 2, 42, 124, 2, STEEL[1]!);
-  wheel(img, 24, 44, 7);
-  wheel(img, 98, 44, 7);
-  selOutline(img, 0.42);
-  return img;
-}
-function truck(): RgbaImage {
   const img = createImage(112, 52);
-  // cargo box
-  for (let y = 4; y < 38; y++) for (let x = 2; x < 76; x++) setPx(img, x, y, pick(ZINC, 0.78 - (y - 4) / 80 - ((x - 2) / 74) * 0.1 - ((x - 2) % 8 === 0 ? 0.12 : 0), x, y, 0.3));
-  hline(img, 2, 75, 4, ZINC[5]!);
-  hline(img, 2, 75, 37, ZINC[1]!);
-  for (let x = 8; x < 70; x++) for (let y = 16; y < 24; y++) setPx(img, x, y, pick(GREEN, 0.62 - (y - 16) / 20, x, y, 0.3)); // painted stripe
+  const P = PAINT_RED;
+  // roof rack
+  for (const x of [6, 26, 46, 64]) vline(img, x, 3, 7, STEEL[3]!);
+  hline(img, 4, 66, 3, STEEL[5]!); hline(img, 4, 66, 4, STEEL[2]!);
+  // passenger box roof + open window band
+  shell(img, 7, 11, () => 3, () => 68, P, 0.98, 0.6);
+  hline(img, 3, 68, 12, YELLOW[4]!);
+  for (let y = 13; y < 25; y++) for (let x = 5; x < 66; x++) setPx(img, x, y, mix(rgb("#2a2034"), P[0]!, 0.25 + (y - 13) * 0.02));
+  hline(img, 6, 64, 15, STEEL[4]!); // grab rail
+  for (let x = 8; x < 66; x += 9) { vline(img, x, 13, 24, STEEL[4]!); vline(img, x + 1, 13, 24, STEEL[2]!); }
+  for (let x = 6; x < 64; x++) if ((x >> 2) % 3 !== 2) { setPx(img, x, 23, TEAK[4]!); setPx(img, x, 24, TEAK[2]!); } // bench backs
   // cab
-  for (let y = 12; y < 42; y++) { const x1 = 108 - Math.max(0, 18 - y); for (let x = 78; x <= x1; x++) setPx(img, x, y, pick(GREEN, 0.78 - (y - 12) / 50 - (x - 78) / 90, x, y, 0.3)); }
-  for (let y = 15; y < 25; y++) for (let x = 90; x < 104 - Math.max(0, 18 - y); x++) setPx(img, x, y, pick(GLASS, 0.62 - (x - 90) / 30, x, y, 0.3));
-  vline(img, 88, 14, 40, GREEN[1]!);
-  hline(img, 78, 108, 32, STEEL[3]!);
-  rect(img, 76, 38, 4, 4, STEEL[2]!);
-  headlight(img, 108, 30);
-  taillight(img, 2, 32);
-  rect(img, 2, 38, 74, 3, STEEL[1]!);
-  wheel(img, 16, 44, 7);
-  wheel(img, 34, 44, 7);
-  wheel(img, 96, 44, 7);
-  selOutline(img, 0.42);
-  return img;
+  shell(img, 10, 26, () => 68, (y) => 86 + (y - 10) * 0.75, P);
+  glass(img, 13, 22, () => 71, (y) => 80 + (y - 13) * 0.4, 3);
+  glass(img, 12, 24, (y) => 85 + (y - 12) * 0.75, (y) => 87 + (y - 12) * 0.75, 0);
+  // lower body + hood
+  shell(img, 25, 42, (y) => (y < 27 ? 4 : 3), (y) => (y > 40 ? 106 : 107), P, 0.82, 0.36);
+  shell(img, 22, 26, () => 97, (y) => 104 + (y - 22) * 0.75, P, 0.95, 0.78);
+  hline(img, 3, 106, 28, YELLOW[3]!); hline(img, 3, 106, 29, YELLOW[1]!);
+  seam(img, 69, 25, 40, P); seam(img, 88, 25, 40, P);
+  hline(img, 83, 86, 31, STEEL[4]!);
+  rect(img, 88, 18, 3, 4, P[1]!); setPx(img, 88, 18, P[4]!);
+  rect(img, 3, 38, 12, 3, STEEL[3]!); hline(img, 3, 14, 38, STEEL[5]!); // rear step
+  wheelWell(img, 26, 43, 8); wheelWell(img, 90, 43, 8);
+  chrome(img, 2, 8, 37, 3); chrome(img, 102, 109, 37, 3);
+  tyre(img, 26, 43, 8); tyre(img, 90, 43, 8);
+  return finishVehicle(img, () => { lamp(img, 106, 30, 3, 3); tail(img, 3, 30, 2, 4); }, [12, 104]);
 }
+
+/** Orange city bus (176 × 68): cream upper deck with a window band, orange skirt, two doors, roof AC pod, lit route board. */
+function bus(): RgbaImage {
+  const img = createImage(176, 68);
+  const U = PAINT_WHITE, L = PAINT_ORANGE;
+  shell(img, 2, 5, (y) => 62 + (5 - y), (y) => 112 - (5 - y), BOX_GREY, 0.95, 0.6); // AC pod
+  for (let x = 66; x < 108; x += 4) setPx(img, x, 4, BOX_GREY[1]!);
+  const L0 = (y: number) => 2 + (y < 10 ? 10 - y : 0) * 0.5;
+  const R0 = (y: number) => 173 - (y < 10 ? (10 - y) * 0.7 : 0);
+  shell(img, 6, 33, L0, R0, U, 0.95, 0.62);
+  shell(img, 34, 56, () => 2, () => 173, L, 0.84, 0.38);
+  hline(img, 2, 173, 34, L[1]!); hline(img, 2, 173, 35, L[5]!);
+  hline(img, 2, 173, 44, L[5]!); hline(img, 2, 173, 45, L[2]!);
+  // window band
+  for (let x = 8; x < 140; x += 16) if (x < 88 || x > 106) glass(img, 12, 28, () => x, () => x + 13, x);
+  for (let x = 8; x < 141; x++) { setPx(img, x, 29, U[1]!); setPx(img, x, 11, U[2]!); }
+  // doors
+  for (const dx of [90, 148]) { glass(img, 12, 54, () => dx, () => dx + 13, dx); vline(img, dx + 6, 12, 54, STEEL[2]!); vline(img, dx + 7, 12, 54, STEEL[4]!); bevel(img, dx - 1, 11, 16, 2, STEEL, 3); }
+  // windscreen + route board
+  glass(img, 13, 36, () => 165, (y) => 171, 4);
+  rect(img, 150, 7, 21, 4, rgb("#1c1820"));
+  markNight(img, "light", () => { for (let x = 152; x < 169; x++) if (x % 3) setPx(img, x, 8, ORANGE[4]!); for (let x = 152; x < 169; x++) if ((x + 1) % 4) setPx(img, x, 9, ORANGE[3]!); });
+  for (let y = 40; y < 52; y += 2) hline(img, 6, 18, y, L[1]!); // engine vent
+  rect(img, 163, 47, 9, 3, STEEL[1]!); // grille
+  wheelWell(img, 36, 58, 9); wheelWell(img, 142, 58, 9);
+  chrome(img, 2, 8, 52, 3); chrome(img, 160, 174, 52, 3);
+  hline(img, 2, 173, 56, L[0]!);
+  tyre(img, 36, 58, 9); tyre(img, 142, 58, 9);
+  return finishVehicle(img, () => { lamp(img, 170, 44, 3, 3); tail(img, 3, 40, 2, 5); }, [6, 170]);
+}
+
+/** Lorry (160 × 68): ribbed grey box with a green stripe, tandem rear axle, green cab, exhaust stack, big mirror. */
+function truck(): RgbaImage {
+  const img = createImage(160, 68);
+  const C = PAINT_GREEN;
+  // cargo box with corrugated ribs
+  for (let y = 4; y <= 48; y++) for (let x = 3; x <= 112; x++) {
+    const k = (x - 3) % 6;
+    let t = (k === 0 ? 0.92 : k < 3 ? 0.7 : k < 5 ? 0.55 : 0.32) - ((y - 4) / 44) * 0.2;
+    if (y === 4) t = 1;
+    setPx(img, x, y, pick(BOX_GREY, t, x, y, 0.25));
+  }
+  for (let y = 36; y < 41; y++) hline(img, 3, 112, y, pick(C, y === 36 ? 0.95 : 0.6 - (y - 36) * 0.06, 3, y, 0.2));
+  hline(img, 3, 112, 47, BOX_GREY[1]!); hline(img, 3, 112, 48, BOX_GREY[0]!);
+  vline(img, 5, 6, 46, BOX_GREY[1]!); for (const y of [10, 28, 44]) rect(img, 3, y, 3, 2, STEEL[1]!); // rear hinges
+  // stains running down from the roof
+  for (let x = 4; x < 112; x++) if (hash(x, 3, 77) > 0.8) for (let k = 0; k < 3 + hash(x, 4, 77) * 9; k++) setPx(img, x, 5 + k, mix(getPx(img, x, 5 + k), BOX_GREY[1]!, 0.35));
+  // chassis
+  rect(img, 3, 49, 154, 4, STEEL[0]!); hline(img, 3, 156, 49, STEEL[2]!);
+  // cab
+  vline(img, 114, 1, 34, STEEL[5]!); vline(img, 115, 1, 34, STEEL[2]!); rect(img, 113, 0, 3, 2, STEEL[1]!); // exhaust
+  shell(img, 12, 52, (y) => 117 + (y < 14 ? 14 - y : 0), (y) => Math.min(156, 148 + (y - 12) * 0.5), C);
+  glass(img, 16, 30, () => 121, () => 141, 6);
+  glass(img, 15, 31, (y) => 147 + (y - 15) * 0.5, (y) => 150 + (y - 15) * 0.5, 0);
+  hline(img, 118, 155, 33, C[5]!); hline(img, 118, 155, 34, C[1]!);
+  seam(img, 118, 15, 50, C); seam(img, 144, 15, 50, C);
+  hline(img, 137, 141, 37, STEEL[4]!);
+  vline(img, 156, 16, 24, STEEL[2]!); rect(img, 156, 18, 2, 6, STEEL[1]!); setPx(img, 156, 18, STEEL[4]!); // mirror arm
+  rect(img, 120, 46, 18, 3, STEEL[3]!); hline(img, 120, 137, 46, STEEL[5]!); // step
+  for (let y = 38; y < 46; y += 2) hline(img, 151, 155, y, C[1]!); // grille
+  wheelWell(img, 26, 58, 9); wheelWell(img, 48, 58, 9); wheelWell(img, 134, 58, 9);
+  chrome(img, 148, 158, 52, 3);
+  tyre(img, 26, 58, 9); tyre(img, 48, 58, 9); tyre(img, 134, 58, 9);
+  return finishVehicle(img, () => { lamp(img, 154, 42, 3, 3); tail(img, 3, 41, 2, 5); }, [10, 152]);
+}
+
+/** Pink taxi (88 × 36): sedan with roof sign, two doors, chrome trim. */
 function taxi(): RgbaImage {
-  const img = createImage(60, 28);
-  const P = PINK;
-  for (let y = 4; y < 10; y++) hline(img, 18 - (y - 4), 40 + (y - 4) * 1.5, y, pick(P, 0.85, 18, y, 0.3));
-  for (let y = 5; y < 10; y++) for (let x = 20 - (y - 5); x < 40 + (y - 5); x++) if (x !== 30) setPx(img, x, y, pick(GLASS, 0.6 - (x - 18) / 50, x, y, 0.3));
-  for (let y = 10; y < 21; y++) hline(img, 2 + (y < 12 ? 12 - y : 0), 57 - (y < 12 ? 12 - y : 0), y, pick(P, 0.75 - (y - 10) / 30, 2, y, 0.3));
-  hline(img, 2, 57, 14, P[5]!);
-  vline(img, 30, 10, 19, P[1]!);
-  rect(img, 26, 1, 8, 3, YELLOW[3]!); // roof light
-  markNight(img, "light", () => rect(img, 27, 2, 6, 1, YELLOW[5]!));
-  headlight(img, 57, 13);
-  taillight(img, 2, 13);
-  wheel(img, 13, 21, 6);
-  wheel(img, 47, 21, 6);
-  selOutline(img, 0.42);
-  return img;
+  const img = createImage(88, 36);
+  const P = PAINT_PINK;
+  bevel(img, 37, 1, 12, 3, YELLOW, 3); // roof sign (lit at night)
+  markNight(img, "light", () => rect(img, 38, 2, 10, 1, YELLOW[5]!));
+  shell(img, 4, 14, (y) => 28 - (y - 4) * 1.4, (y) => 54 + (y - 4) * 2.1, P, 0.95, 0.7);
+  glass(img, 6, 13, (y) => 28 - (y - 6) * 1.3, (y) => 53 + (y - 6) * 2.0, 5);
+  vline(img, 44, 6, 13, P[2]!); vline(img, 45, 6, 13, P[4]!);
+  shell(img, 14, 28, (y) => (y === 14 ? 6 : y === 15 ? 3 : 2), (y) => (y === 14 ? 78 : y === 15 ? 83 : 85), P, 0.84, 0.38);
+  hline(img, 3, 84, 19, P[5]!); hline(img, 3, 84, 20, P[2]!);
+  seam(img, 43, 14, 26, P); seam(img, 63, 14, 26, P);
+  hline(img, 38, 40, 18, STEEL[4]!); hline(img, 58, 60, 18, STEEL[4]!);
+  rect(img, 64, 12, 3, 3, P[1]!); setPx(img, 64, 12, P[4]!);
+  hline(img, 6, 82, 25, STEEL[4]!); // chrome rub strip
+  wheelWell(img, 17, 29, 6); wheelWell(img, 71, 29, 6);
+  chrome(img, 1, 6, 24, 3); chrome(img, 81, 86, 24, 3);
+  tyre(img, 17, 29, 6); tyre(img, 71, 29, 6);
+  return finishVehicle(img, () => { lamp(img, 83, 16, 3, 2); tail(img, 2, 16, 2, 3); }, [8, 80]);
 }
 
 // ---------------- houses ----------------
@@ -436,7 +579,7 @@ function hospital(): RgbaImage {
   wall(img, 0, 20, w, h - 24, WHITEWALL, 0.85);
   rect(img, 0, 14, w, 6, GREEN[3]!);
   hline(img, 0, w - 1, 14, GREEN[5]!);
-  for (let r = 0; r < 3; r++) for (let i = 0; i < 9; i++) if (!(r === 2 && i >= 3 && i <= 5)) win(img, 8 + i * 24, 28 + r * 28, 16, 16, STEEL, 1, r === 1 && i % 2 ? CLOTH() : undefined);
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 9; i++) if (!(r === 2 && i >= 3 && i <= 5)) win(img, 8 + i * 24, 28 + r * 28, 16, 16, STEEL, 1, r === 1 && i % 2 ? curtainCloth() : undefined);
   hline(img, 0, w - 1, 52, GREEN[4]!);
   hline(img, 0, w - 1, 80, GREEN[4]!);
   // green plus (medical, not the protected red cross)
@@ -458,7 +601,7 @@ function hospital(): RgbaImage {
   selOutline(img, 0.4);
   return img;
 }
-function CLOTH(): Rgb { return rgb("#e8e0d0"); }
+function curtainCloth(): Rgb { return rgb("#e8e0d0"); }
 
 function policeStation(): RgbaImage {
   const w = 160, h = 112;

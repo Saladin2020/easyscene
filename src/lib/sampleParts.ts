@@ -17,6 +17,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import { ATLAS_COLUMNS, ATLAS_ROWS, MASK_E, MASK_N, MASK_S, MASK_W } from "../shared/tiles.js";
+import { TOWN_MORE_DRAW } from "./sampleTownMore.js";
 import type { BackgroundPart, Facing, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, ShopPartMeta, TilesetPart } from "../shared/types.js";
 import { decodePng, writePng } from "./png.js";
 import { NIGHT_MASK_FILE } from "../shared/night.js";
@@ -1197,6 +1198,43 @@ function townLifeDefs(): SampleDef[] {
   ];
 }
 
+/** DSK-6: vehicles (facing right), house styles, civic buildings and offices, ตลาดนัดมือสอง (flea market). */
+function townMoreDefs(): SampleDef[] {
+  const M = TOWN_MORE_DRAW;
+  const car = (id: string, name: string, w: number, h: number, base: string, tags: string[], draw: () => RgbaImage) =>
+    faced(prop(id, name, w, h, "back", base, ["vehicle", "thai-town", "dsk6", ...tags], draw, undefined, "street"), "right");
+  const stall = (id: string, name: string, base: string, tags: string[], draw: () => RgbaImage): SampleDef => {
+    const d = building(id, name, 96, 80, base, ["shop", "market", "flea-market", "dsk6", ...tags], draw);
+    return { ...d, meta: { ...(d.meta as PropPart), shop: { counterTop: 50, seller: { x: 48, y: 72 } } } };
+  };
+  return [
+    car("prop_car_pickup", "Pickup truck (white)", 64, 30, "#e2e4e4", ["car", "pickup"], M.pickup),
+    car("prop_tuktuk", "Tuk-tuk (ตุ๊กตุ๊ก)", 56, 36, "#4064b4", ["tuktuk", "taxi"], M.tuktuk),
+    car("prop_scooter_teal", "Scooter (teal)", 40, 28, "#2a9a8e", ["scooter", "motorbike"], M.scooter),
+    car("prop_songthaew", "Songthaew (สองแถว)", 80, 40, "#cc3a34", ["songthaew", "bus"], M.songthaew),
+    car("prop_bus_city", "City bus", 128, 52, "#f6923a", ["bus"], M.bus),
+    car("prop_truck_cargo", "Cargo truck", 112, 52, "#2e8c52", ["truck"], M.truck),
+    car("prop_car_taxi", "Taxi (pink)", 60, 28, "#e0608a", ["car", "taxi"], M.taxi),
+    building("prop_bld_house_thai_wood", "Thai wooden house on stilts (เรือนไทย)", 112, 112, "#8c5630", ["house", "wood", "dsk6"], M.thaiWoodHouse),
+    building("prop_bld_house_modern", "Modern house", 96, 96, "#e2e4e4", ["house", "modern", "dsk6"], M.modernHouse),
+    building("prop_bld_house_kampung", "Malay kampung house (rumah kampung)", 112, 112, "#2a9a8e", ["house", "kampung", "multicultural", "dsk6"], M.kampungHouse),
+    building("prop_bld_shophouse_chinese", "Chinese shophouse · ร้านผ้า", 112, 160, "#e8c48a", ["shophouse", "chinese", "fabric", "multicultural", "dsk6"], M.chineseShophouse),
+    building("prop_bld_shophouse_stationery", "Shophouse 2F · เครื่องเขียน", 112, 144, "#8fb4d8", ["shophouse", "stationery", "dsk6"], M.shophouseStationery),
+    building("prop_bld_shophouse_clothes", "Shophouse 2F · เสื้อผ้า", 112, 144, "#e3a3b5", ["shophouse", "clothes", "dsk6"], M.shophouseClothes),
+    building("prop_bld_hospital", "Hospital (โรงพยาบาล)", 224, 144, "#2e8c52", ["civic", "hospital", "dsk6"], M.hospital),
+    building("prop_bld_police", "Police station (สถานีตำรวจ)", 160, 112, "#2a3c6c", ["civic", "police", "dsk6"], M.policeStation),
+    building("prop_bld_post_office", "Post office (ไปรษณีย์)", 128, 96, "#cc3a34", ["civic", "office", "post", "dsk6"], M.postOffice),
+    building("prop_bld_bank", "Bank (ธนาคาร)", 128, 112, "#2c4590", ["office", "bank", "dsk6"], M.bank),
+    building("prop_bld_district_office", "District office (ที่ว่าการอำเภอ)", 192, 112, "#efe2b8", ["civic", "office", "government", "dsk6"], M.districtOffice),
+    building("prop_bld_company_office", "Company office (บริษัท)", 128, 160, "#4f7896", ["office", "company", "dsk6"], M.companyOffice),
+    stall("prop_bld_flea_clothes", "Flea market · clothes stall (เสื้อผ้ามือสอง)", "#3c78c8", ["clothes"], M.fleaClothesA),
+    stall("prop_bld_flea_clothes_red", "Flea market · clothes stall, red tarp", "#cc3a34", ["clothes"], M.fleaClothesB),
+    stall("prop_bld_flea_junk", "Flea market · second-hand goods stall", "#2e8c52", ["second-hand"], M.fleaJunk),
+    prop("prop_clothes_rack", "Clothes rack (shirts)", 48, 48, "back", "#87919f", ["flea-market", "clothes", "market", "dsk6"], M.clothesRack, undefined, "decor"),
+    prop("prop_flea_banner", "Entrance banner · ตลาดนัดมือสอง", 160, 64, "back", "#f6923a", ["flea-market", "market", "sign", "dsk6"], M.fleaBanner, undefined, "street"),
+  ];
+}
+
 export function sampleDefs(): SampleDef[] {
   return withShopTwins([
     bg("bg_sky_day", "Sky · day", "sky", 0.05, "#8fc7e8", ["sky", "day"], skyDay),
@@ -1255,6 +1293,7 @@ export function sampleDefs(): SampleDef[] {
     prop("prop_fish_rack", "Fish drying rack (ราวตากปลา)", 48, 32, "back", "#c8c45a", ["fishing", "coast", "kampung", "market"], KAMPUNG_DRAW.fishRack, undefined, "decor"),
     prop("prop_fisher_hut", "Stilt fishing hut (บ้านชาวประมง)", 96, 88, "back", "#a88a44", ["house", "fishing", "coast", "kampung", "stilts"], KAMPUNG_DRAW.fisherHut, { x: 0, y: 54, w: 96, h: 6 }, "water"),
     ...townLifeDefs(),
+    ...townMoreDefs(),
     // ---- brick town (src/lib/sampleBrick.ts): modular rowhouses + city street dressing ----
     bg("bg_far_city_spires", "City skyline + spires", "far", 0.2, "#7c96b4", ["city", "skyline", "spires", "brick-town"], BRICK_DRAW.citySpires),
     bg("bg_mid_utility_poles", "Utility poles + wires", "mid", 0.5, "#56402c", ["city", "power-lines", "pole", "brick-town"], BRICK_DRAW.utilityPoles),

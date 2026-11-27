@@ -190,6 +190,53 @@ export const DEMO_INPUTS: ComposeSceneInput[] = [
     ],
   },
   {
+    // DSK-6 ตลาดนัดมือสอง: second-hand clothes on rails, a junk stall, racks and a banner; sellers stand behind the tables
+    id: "flea_market",
+    name: "Flea market · ตลาดนัดมือสอง",
+    width: 52,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    streets: [{ x: 176, gap: 16, items: ["prop_bld_flea_clothes", "prop_bld_flea_junk", "prop_bld_flea_clothes_red", "prop_bld_flea_clothes"] }],
+    props: [
+      { part: "prop_flea_banner", x: 8 },
+      { part: "prop_clothes_rack", x: 632 },
+      { part: "prop_tuktuk", x: 690 },
+      { part: "prop_scooter_teal", x: 770 },
+    ],
+  },
+  {
+    // DSK-6 civic street: hospital, police station, post office, bank, district office, company office + traffic
+    id: "civic_street",
+    name: "Civic street · โรงพยาบาล สถานีตำรวจ ไปรษณีย์",
+    width: 72,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_hills"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    streets: [{ x: 0, gap: 16, items: ["prop_bld_hospital", "prop_bld_police", "prop_bld_post_office", "prop_bld_bank", "prop_bld_district_office", "prop_bld_company_office"] }],
+    props: [
+      { part: "prop_car_taxi", x: 150 },
+      { part: "prop_bus_city", x: 520 },
+      { part: "prop_car_pickup", x: 900 },
+    ],
+  },
+  {
+    // DSK-6 houses: Thai wooden stilt house, modern house, Malay kampung house, Chinese shophouse, shophouse variants
+    id: "houses_street",
+    name: "Houses · เรือนไทย บ้านสมัยใหม่ rumah kampung ตึกแถว",
+    width: 52,
+    layers: ["bg_sky_day", "bg_far_clouds", "bg_mid_tropical"],
+    tileset: "tiles_street",
+    terrain: { groundHeight: 3 },
+    streets: [{ x: 0, gap: 16, items: ["prop_bld_house_thai_wood", "prop_bld_house_modern", "prop_bld_house_kampung", "prop_bld_shophouse_chinese", "prop_bld_shophouse_stationery", "prop_bld_shophouse_clothes"] }],
+    props: [
+      { part: "prop_songthaew", x: 120 },
+      { part: "prop_truck_cargo", x: 360 },
+      { part: "prop_scooter_teal", x: 640 },
+      { part: "prop_tuktuk", x: 760 },
+    ],
+  },
+  {
     // Multicultural village: the wat, the Chinese-Thai shrine and the mosque share one street;
     // the road runs on past the kampung to a fishing beach with kolek boats.
     id: "harmony_town",

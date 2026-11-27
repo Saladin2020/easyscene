@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 
 const out = mkdtempSync(path.join(os.tmpdir(), "easyscene-smoke-"));
-const run = (...args) => execFileSync("npx", ["tsx", "src/cli.ts", ...args], { encoding: "utf8" });
+const tsx = path.join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs"); // no "npx" spawn: Windows-safe
+const run = (...args) => execFileSync(process.execPath, [tsx, "src/cli.ts", ...args], { encoding: "utf8" });
 const res = JSON.parse(
   run("compose", "--id", "smoke_scene", "--layers", "bg_sky_dusk,bg_far_mountains,bg_mid_forest", "--hill", "10,4,2",
     "--platform", "4,3,3", "--prop", "prop_tree_pine@40", "--export", "all", "--out", out, "--json"),

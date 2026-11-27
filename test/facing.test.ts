@@ -31,7 +31,7 @@ describe("vehicle facing", () => {
   it("every vehicle part declares its facing", () => {
     for (const d of sampleDefs()) {
       const m = d.meta as PropPart;
-      if (m.kind === "prop" && m.tags.includes("vehicle")) expect(m.facing, m.id).toMatch(/^(left|right)$/);
+      if (m.kind === "prop" && m.tags?.includes("vehicle")) expect(m.facing, m.id).toMatch(/^(left|right)$/);
     }
   });
 

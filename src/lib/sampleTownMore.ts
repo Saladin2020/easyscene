@@ -209,18 +209,22 @@ function tuktuk(): RgbaImage {
 function scooter(): RgbaImage {
   const img = createImage(48, 32);
   const P = PAINT_TEAL;
-  line(img, 34, 10, 39, 25, STEEL[2]!); line(img, 35, 10, 40, 25, STEEL[4]!); // fork
-  shell(img, 13, 23, (y) => 4 + Math.abs(y - 18) * 0.55, (y) => 24 - (y > 20 ? (y - 20) * 2 : 0), P, 0.9, 0.35); // rear cowl
-  shell(img, 20, 23, () => 18, () => 34, STEEL, 0.6, 0.3); // floorboard
-  shell(img, 7, 22, (y) => 33 - (y - 7) * 0.12, (y) => 37 + (y - 7) * 0.25, P, 0.92, 0.42); // leg shield
-  for (let x = 32; x <= 45; x++) { const y = 17 + Math.round(((x - 39) ** 2) / 22); setPx(img, x, y, P[4]!); setPx(img, x, y + 1, P[2]!); } // front fender
-  for (let x = 6; x <= 22; x++) { setPx(img, x, 11, TIRE[3]!); setPx(img, x, 12, TIRE[2]!); } for (let x = 7; x <= 21; x++) setPx(img, x, 10, TIRE[3]!); // seat
-  hline(img, 31, 40, 6, TIRE[1]!); setPx(img, 40, 6, STEEL[4]!); // handlebar
-  for (let y = 1; y < 6; y++) setPx(img, 34, y, STEEL[3]!); rect(img, 33, 1, 3, 2, STEEL[4]!); // mirror
+  line(img, 36, 8, 40, 25, STEEL[2]!); line(img, 37, 8, 41, 25, STEEL[4]!); // fork
+  shell(img, 12, 23, (y) => 3 + ((y - 17) ** 2) / 7, (y) => 25 - Math.max(0, y - 20) * 2, P, 0.92, 0.34); // rear cowl
+  for (let y = 19; y < 25; y++) for (let x = 8; x < 19; x++) if (Math.hypot((x - 13) / 6, (y - 22) / 3.2) < 1) setPx(img, x, y, pick(STEEL, 0.75 - (y - 19) / 9 - (x - 8) / 40, x, y, 0.35)); // engine case
+  shell(img, 21, 23, () => 20, () => 34, STEEL, 0.7, 0.3); // floorboard
+  for (let x = 21; x < 34; x += 2) setPx(img, x, 21, STEEL[2]!); // rubber mat
+  shell(img, 7, 22, (y) => 31 + (y - 7) * 0.08, (y) => 35 + (y - 7) * 0.45, P, 0.94, 0.4); // leg shield, raked forward
+  shell(img, 3, 7, () => 32, (y) => 37 + (y > 5 ? 1 : 0), P, 0.98, 0.6); // headset
+  for (let x = 33; x <= 46; x++) { const y = 17 + Math.round(((x - 40) ** 2) / 22); setPx(img, x, y, P[4]!); setPx(img, x, y + 1, P[2]!); } // front fender
+  for (let y = 9; y < 13; y++) { const a = 6 + (y === 9 ? 2 : 0), b = 23 - (y === 9 ? 2 : 0); for (let x = a; x <= b; x++) setPx(img, x, y, y === 9 ? TIRE[3]! : pick(TIRE, 0.6 - (y - 9) * 0.15, x, y, 0.2)); } // seat
+  hline(img, 29, 32, 3, TIRE[1]!); setPx(img, 29, 3, STEEL[4]!); // handlebar grip
+  for (let y = 0; y < 3; y++) setPx(img, 34, y, STEEL[3]!); rect(img, 33, 0, 3, 1, STEEL[4]!); // mirror
   chrome(img, 2, 13, 24, 2); // exhaust
-  hline(img, 6, 20, 16, P[5]!); // body crease highlight
-  tyre(img, 9, 25, 6); tyre(img, 39, 25, 6);
-  return finishVehicle(img, () => { lamp(img, 38, 8, 2, 2); tail(img, 4, 15, 2, 2); }, [4, 44]);
+  for (let x = 6; x < 23; x++) { setPx(img, x, 17, mix(P[5]!, WHITE, 0.5)); setPx(img, x, 18, P[2]!); } // side stripe
+  bevel(img, 3, 7, 6, 2, STEEL, 3); // rear rack
+  tyre(img, 9, 25, 6); tyre(img, 40, 25, 6);
+  return finishVehicle(img, () => { lamp(img, 38, 4, 2, 3); tail(img, 3, 13, 2, 2); }, [4, 45]);
 }
 
 /** Red songthaew (112 × 52): roof rack, open-sided passenger box with bars and benches, cab, long hood. */

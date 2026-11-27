@@ -753,137 +753,191 @@ function shirt(img: RgbaImage, x: number, y: number, pal: Rgb[]): void {
 }
 
 // ---------------- civic buildings ----------------
+const MINT = shadeRamp("#bfe0d2");
+const STONE = ramp("#4a4448", "#6e666a", "#948a86", "#b8aea4", "#d6ccbe", "#efe8da");
+const MAROON = shadeRamp("#8a2a30");
+/** Flat roof: parapet coping with lit lip, a stain band, and the shadow it casts. */
+function parapet(img: RgbaImage, x0: number, x1: number, y: number, h: number, pal: Rgb[], seed: number): void {
+  renderWall(img, x0, y, x1 - x0 + 1, h, pal, seed, [y + 2]);
+  hline(img, x0 - 1, x1 + 1, y, pal[5]!); hline(img, x0 - 1, x1 + 1, y + 1, pal[4]!);
+  hline(img, x0 - 1, x1 + 1, y + h - 1, pal[1]!);
+  shadeArea(img, x0, y + h, x1 - x0 + 1, 2, 0.26);
+}
+/** Plain-stripe flag on a pole (no emblems). */
+function flagPole(img: RgbaImage, x: number, top: number, bottom: number): void {
+  vline(img, x, top, bottom, STEEL[4]!); vline(img, x + 1, top, bottom, STEEL[2]!);
+  ball(img, x + 0.5, top - 1, 1.5, YELLOW);
+  [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!].forEach((c, i) => { for (let k = 0; k < 13; k++) setPx(img, x - 13 + k, top + 2 + i + Math.round(Math.sin(k / 2.2) * 0.8), i === 0 && k % 4 === 0 ? mix(c, WHITE, 0.2) : k > 9 ? mix(c, SHADOW, 0.15) : c); });
+}
+/** Hospital (224 × 144): mint-and-white three-storey block, window ribbons with hoods, lit sign, canopy entrance, rooftop plant. */
 function hospital(): RgbaImage {
   const w = 224, h = 144;
   const img = createImage(w, h);
-  wall(img, 0, 20, w, h - 24, WHITEWALL, 0.85);
-  rect(img, 0, 14, w, 6, GREEN[3]!);
-  hline(img, 0, w - 1, 14, GREEN[5]!);
-  for (let r = 0; r < 3; r++) for (let i = 0; i < 9; i++) if (!(r === 2 && i >= 3 && i <= 5)) win(img, 8 + i * 24, 28 + r * 28, 16, 16, STEEL, 1, r === 1 && i % 2 ? curtainCloth() : undefined);
-  hline(img, 0, w - 1, 52, GREEN[4]!);
-  hline(img, 0, w - 1, 80, GREEN[4]!);
-  // green plus (medical, not the protected red cross)
-  // rooftop sign box on two posts
-  vline(img, 104, 11, 13, STEEL[2]!); vline(img, 119, 11, 13, STEEL[2]!);
-  bevel(img, 101, 0, 22, 11, WHITEWALL, 4);
-  rect(img, 106, 4, 12, 3, GREEN[3]!); rect(img, 110, 2, 4, 7, GREEN[3]!);
-  markNight(img, "light", () => { rect(img, 106, 4, 12, 3, GREEN[5]!); rect(img, 110, 2, 4, 7, GREEN[5]!); });
-  board(img, "hospital", w / 2, 86, GREEN.slice(1), WHITE, 8, 3);
-  // entrance canopy + glass doors
-  rect(img, 76, 104, 72, 4, STEEL[2]!);
-  hline(img, 76, 147, 104, STEEL[4]!);
-  for (let y = 108; y < h - 4; y++) for (let x = 86; x < 138; x++) setPx(img, x, y, x === 111 || x === 112 ? STEEL[1]! : pick(GLASS, 0.7 - (y - 108) / 80, x, y, 0.3));
-  markNight(img, "window-lit", () => { for (let y = 108; y < h - 4; y++) for (let x = 86; x < 138; x++) setPx(img, x, y, getPx(img, x, y)); });
-  // emergency entrance sign (green bar + white plus; not the protected red-cross emblem)
-  rect(img, 168, 104, 40, 10, GREEN[2]!);
-  rect(img, 172, 108, 6, 2, WHITE); rect(img, 174, 106, 2, 6, WHITE);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  // rooftop plant room + tank
+  renderWall(img, 150, 4, 44, 12, CONCRETE, 3);
+  for (let x = 154; x < 190; x += 4) vline(img, x, 6, 14, CONCRETE[2]!);
+  waterTank(img, 30, 16, 6);
+  renderWall(img, 4, 18, w - 8, h - 21, WALL_WHITE, 41, [34, 66]);
+  parapet(img, 2, w - 3, 14, 6, MINT, 7);
+  // floors 2–3: window ribbons
+  for (const fy of [26, 58]) {
+    for (let x = 12; x < w - 16; x += 24) if (fy === 26 ? x < 60 || x > 140 : x < 86 || x > 130) framedWindow(img, x, fy, 14, 18, MINT, { panes: 2, hood: MINT, curtain: fy === 26 ? rgb("#cfe6f0") : undefined, seed: x + fy });
+    ledge(img, 2, w - 3, fy + 25, MINT, 2);
+  }
+  // sign + green cross, entrance portico
+  signBoard(img, "hospital", 112, 30, GREEN, WHITE, { padX: 6, padY: 3, lit: true });
+  for (const [cx, cy] of [[96, 58], [128, 58]] as const) { rect(img, cx - 1, cy - 4, 4, 11, GREEN[3]!); rect(img, cx - 4, cy - 1, 10, 4, GREEN[3]!); markNight(img, "light", () => { rect(img, cx, cy - 3, 2, 9, GREEN[5]!); rect(img, cx - 3, cy, 8, 2, GREEN[5]!); }); }
+  glassPane(img, 92, 102, 40, h - 106, (x, y) => (x === 19 || x === 20 ? STEEL[2]! : y > 26 ? CLOTH[1]! : mix(rgb("#dfe8e4"), WARM[2]!, 0.15)), 0.3, "window-lit");
+  rect(img, 80, 90, 64, 5, MINT[3]!); hline(img, 80, 143, 90, MINT[5]!); hline(img, 80, 143, 94, MINT[1]!); // canopy slab
+  shadeArea(img, 82, 95, 60, 6, 0.32);
+  for (const px of [83, 138]) post(img, px, 95, h - 5, WALL_WHITE);
+  for (let x = 12; x < w - 16; x += 24) if (x < 70 || x > 146) framedWindow(img, x, 102, 14, 20, MINT, { panes: 2, seed: x });
+  wallLamp(img, 76, 98); wallLamp(img, 146, 98);
+  for (const px of [74, 152]) pottedPlant(img, px, h - 4, "palm", CONCRETE, px);
+  pottedPlant(img, 10, h - 4, "leafy", TERRA, 2); pottedPlant(img, 214, h - 4, "flower", TERRA, 3);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
-function curtainCloth(): Rgb { return rgb("#e8e0d0"); }
 
+/** Police station (160 × 112): hip-roofed two-storey block in cream with maroon trim, navy lit sign, flag, lamp, notice board. */
 function policeStation(): RgbaImage {
   const w = 160, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#d9c7a0");
-  wall(img, 0, 22, w, h - 26, WALL, 0.8);
-  rect(img, 0, 14, w, 8, NAVY[2]!);
-  hline(img, 0, w - 1, 14, NAVY[4]!);
-  board(img, "police", w / 2, 26, NAVY.slice(1), YELLOW[4]!, 8, 3);
-  for (let i = 0; i < 5; i++) if (i !== 2) win(img, 10 + i * 30, 50, 20, 22, NAVY, 1);
-  door(img, 66, 56, 28, 36, GLASS);
-  // blue/red light on the canopy
-  rect(img, 70, 48, 20, 4, STEEL[2]!);
-  rect(img, 74, 44, 5, 4, BLUE[4]!); rect(img, 81, 44, 5, 4, RED[4]!);
-  markNight(img, "light", () => { rect(img, 74, 44, 5, 4, BLUE[5]!); rect(img, 81, 44, 5, 4, RED[5]!); });
-  // flag pole with a plain striped flag
-  vline(img, 150, 30, h - 5, STEEL[4]!);
-  const stripes = [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!];
-  stripes.forEach((c, i) => hline(img, 138, 149, 30 + i, c));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 6, 26, w - 12, h - 29, WALL_CREAM, 13, [60]);
+  tileRoof(img, 4, w - 5, 23, 20, MAROON, 16, 11, WALL_CREAM);
+  for (const x of [16, 40, 104, 128]) framedWindow(img, x, 32, 14, 18, MAROON, { panes: 2, hood: WALL_CREAM, curtain: rgb("#e8e0d0"), seed: x });
+  ledge(img, 4, w - 5, 57, WALL_CREAM, 2);
+  for (const x of [16, 40, 104, 128]) framedWindow(img, x, 70, 14, 20, MAROON, { panes: 2, seed: x + 9 });
+  // entrance bay
+  renderWall(img, 62, 28, 36, h - 31, shadeRamp("#d4c09a"), 19);
+  signBoard(img, "police", 80, 33, NAVY, WHITE, { padX: 4, padY: 3, lit: true });
+  rect(img, 58, 60, 44, 4, MAROON[3]!); hline(img, 58, 101, 60, MAROON[5]!); shadeArea(img, 60, 64, 40, 5, 0.3);
+  panelDoor(img, 70, 72, 20, h - 76, TEAK, MAROON, true);
+  for (const px of [62, 95]) post(img, px, 64, h - 5, WALL_WHITE);
+  wallLamp(img, 66, 66); wallLamp(img, 91, 66);
+  // notice board + flag
+  bevel(img, 108, 96, 16, 11, TEAK, 3); for (const [x, y, c] of [[110, 98, WHITE], [116, 99, YELLOW[4]!], [111, 103, PINK[4]!]] as const) rect(img, x, y, 5, 3, c);
+  flagPole(img, 150, 28, h - 5);
+  pottedPlant(img, 52, h - 4, "snake", CONCRETE, 1); pottedPlant(img, 104, h - 4, "leafy", CONCRETE, 2);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Post office ไปรษณีย์ (128 × 96): red-brick base, cream upper wall, striped awning, red mailbox, lit sign. */
 function postOffice(): RgbaImage {
   const w = 128, h = 96;
   const img = createImage(w, h);
-  wall(img, 0, 22, w, h - 26, WHITEWALL, 0.85);
-  rect(img, 0, 12, w, 10, RED[3]!);
-  hline(img, 0, w - 1, 12, RED[5]!);
-  board(img, "post", w / 2, 26, RED.slice(1), WHITE, 8, 3);
-  win(img, 10, 48, 28, 26, STEEL, 2);
-  win(img, 90, 48, 28, 26, STEEL, 2);
-  door(img, 50, 50, 28, 38, GLASS);
-  // red mailbox
-  rect(img, 116, h - 22, 9, 18, RED[3]!); hline(img, 116, 124, h - 22, RED[5]!); hline(img, 118, 122, h - 17, INK);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  renderWall(img, 4, 20, w - 8, 40, WALL_CREAM, 17, [30]);
+  brick(img, 4, 60, w - 8, h - 63, shadeRamp("#b4503a"), rgb("#d8c4a8"), 5);
+  parapet(img, 2, w - 3, 14, 7, RED, 3);
+  signBoard(img, "post", w / 2, 24, RED, WHITE, { padX: 8, padY: 3, lit: true, trim: YELLOW[3] });
+  for (const x of [12, 96]) framedWindow(img, x, 26, 18, 18, WALL_WHITE, { panes: 2, curtain: rgb("#f4e4c0"), seed: x });
+  ledge(img, 2, w - 3, 52, WALL_CREAM, 2);
+  awning(img, 8, 56, w - 16, 9, RED, [WHITE, WHITE, WHITE, CLOTH[2]!, WHITE, WHITE].map((c) => c), 8, 4);
+  for (const x of [12, 88]) framedWindow(img, x, 70, 26, 18, WALL_WHITE, { panes: 3, seed: x });
+  glassPane(img, 50, 68, 26, h - 72, (x, y) => (x === 12 || x === 13 ? STEEL[2]! : y > 18 ? STEEL[3]! : mix(rgb("#e8dcc0"), WARM[2]!, 0.2)), 0.3, "window-lit");
+  bevel(img, 48, 66, 30, 2, STEEL, 3);
+  // red mailbox (ตู้ไปรษณีย์) on a post
+  vline(img, 117, h - 12, h - 4, STEEL[1]!);
+  for (let y = h - 28; y < h - 12; y++) for (let x = 112; x < 123; x++) setPx(img, x, y, pick(RED, (y === h - 28 ? 0.95 : 0.72) - (x - 112) / 22, x, y, 0.3));
+  hline(img, 114, 120, h - 24, RED[0]!); rect(img, 114, h - 21, 7, 2, WHITE);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Bank ธนาคาร (128 × 112): stone facade with pilasters, tall glass, lit sign band, ATM with a glowing screen, steps, plants. */
 function bank(): RgbaImage {
   const w = 128, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#c8ccd8");
-  wall(img, 0, 18, w, h - 22, WALL, 0.82);
-  rect(img, 0, 10, w, 8, BLUE[2]!);
-  hline(img, 0, w - 1, 10, BLUE[4]!);
-  // columns
-  for (const cx of [6, 38, 84, 116]) for (let y = 40; y < h - 4; y++) hline(img, cx, cx + 6, y, pick(WHITEWALL, 0.85 - (cx % 7) / 20, cx, y, 0.3));
-  board(img, "bank", w / 2, 22, BLUE.slice(1), YELLOW[4]!, 10, 4);
-  for (let y = 44; y < h - 4; y++) for (let x = 48; x < 80; x++) setPx(img, x, y, x === 63 || x === 64 ? STEEL[1]! : pick(GLASS, 0.7 - (y - 44) / 90, x, y, 0.3));
-  markNight(img, "window-lit", () => { for (let y = 44; y < h - 4; y++) for (let x = 48; x < 80; x++) setPx(img, x, y, getPx(img, x, y)); });
+  const BRAND = shadeRamp("#5a3c9a");
+  renderWall(img, 4, 14, w - 8, h - 17, STONE, 23, [40]);
+  for (let y = 14; y < h - 3; y += 6) hline(img, 4, w - 5, y, STONE[2]!); // stone courses
+  parapet(img, 2, w - 3, 8, 6, STONE, 5);
+  rect(img, 2, 20, w - 4, 16, BRAND[2]!); hline(img, 2, w - 3, 20, BRAND[4]!); hline(img, 2, w - 3, 35, BRAND[0]!);
+  signBoard(img, "bank", w / 2, 22, BRAND, WHITE, { padX: 8, padY: 2, lit: true });
+  shadeArea(img, 4, 36, w - 8, 3, 0.3);
+  // pilasters between tall windows
+  for (const px of [6, 36, 86, 116]) { for (let y = 40; y < h - 4; y++) for (let x = px; x < px + 6; x++) setPx(img, x, y, pick(STONE, x === px ? 0.98 : x === px + 5 ? 0.3 : 0.72, x, y, 0.3)); bevel(img, px - 1, 40, 8, 3, STONE, 4); }
+  for (const x of [16, 96]) { glassPane(img, x, 46, 16, 40, (xx, yy) => (yy % 13 === 0 ? STEEL[3]! : undefined), 0.35, "window-lit"); bevel(img, x - 1, 45, 18, 1, STEEL, 4); }
+  // glass doors
+  glassPane(img, 46, 52, 36, h - 56, (x, y) => (x === 17 || x === 18 ? STEEL[2]! : y > 30 ? STEEL[3]! : mix(rgb("#e0d8ee"), WARM[2]!, 0.15)), 0.32, "window-lit");
+  bevel(img, 44, 48, 40, 4, STONE, 4);
   // ATM
-  bevel(img, 92, 58, 18, 34, STEEL, 3);
-  rect(img, 95, 62, 12, 8, GLASS[4]!);
-  markNight(img, "light", () => rect(img, 95, 62, 12, 8, GLASS[5]!));
-  for (let k = 0; k < 9; k++) setPx(img, 96 + (k % 3) * 2, 74 + Math.floor(k / 3) * 2, STEEL[5]!);
-  win(img, 14, 50, 18, 28, STEEL, 1);
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  bevel(img, 18, 90, 12, 16, STEEL, 2); markNight(img, "light", () => rect(img, 20, 92, 8, 5, rgb("#7ad0f0"))); rect(img, 20, 99, 8, 2, STEEL[0]!);
+  for (let i = 0; i < 3; i++) hline(img, 40 - i * 2, 88 + i * 2, h - 6 + i, STONE[5 - i]!);
+  pottedPlant(img, 100, h - 4, "snake", CONCRETE, 6); pottedPlant(img, 110, h - 4, "leafy", CONCRETE, 7);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** District office ที่ว่าการอำเภอ (192 × 112): two-tier tiled roof, cream walls, white-column veranda, central steps, sign, plain-stripe flag. */
 function districtOffice(): RgbaImage {
   const w = 192, h = 112;
   const img = createImage(w, h);
-  const WALL = shadeRamp("#efe2b8");
-  wall(img, 0, 30, w, h - 34, WALL, 0.82);
-  // hip roof, plain
-  for (let y = 10; y < 30; y++) { const inset = Math.round((30 - y) * 1.2); hline(img, inset - 4, w - 1 - inset + 4, y, pick(ROOF_TILE, 0.75 - (y - 10) / 40 - (y % 3 === 2 ? 0.15 : 0), inset, y, 0.3)); }
-  hline(img, 0, w - 1, 30, ROOF_TILE[0]!);
-  board(img, "district", w / 2, 34, TEAK.slice(1), YELLOW[4]!, 8, 3);
-  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) win(img, 12 + i * 30, 56, 18, 24, TEAK, 1);
-  // porch with steps
-  rect(img, 70, 54, 52, 3, WALL[5]!);
-  for (const cx of [72, 116]) for (let y = 57; y < h - 8; y++) hline(img, cx, cx + 3, y, WALL[4]!);
-  door(img, 84, 62, 24, 40, TEAK);
+  renderWall(img, 8, 36, w - 16, h - 39, WALL_CREAM, 29, [50]);
+  // upper tier + lower tier roofs
+  tileRoof(img, 40, w - 41, 20, 16, ROOF_TILE, 12, 5, WALL_CREAM);
+  renderWall(img, 44, 21, w - 88, 8, WALL_CREAM, 30);
+  tileRoof(img, 6, w - 7, 34, 8, ROOF_TILE, 8, 6, WALL_CREAM);
+  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) framedWindow(img, 16 + i * 30, 50, 16, 22, TEAK, { panes: 2, hood: WALL_CREAM, curtain: rgb("#f0e6cc"), seed: i });
+  for (let i = 0; i < 6; i++) if (i !== 2 && i !== 3) shutters(img, 16 + i * 30, 50, 16, 22, shadeRamp("#3a6a8a"));
+  // veranda with white columns + rail
+  for (const cx of [12, 44, 140, 172]) post(img, cx, 76, h - 6, WALL_WHITE, 4);
+  rail(img, 10, 70, 88, 8, WALL_WHITE, 4); rail(img, 122, 181, 88, 8, WALL_WHITE, 4);
+  // portico
+  rect(img, 70, 44, 52, 4, WALL_WHITE[3]!); hline(img, 70, 121, 44, WALL_WHITE[5]!); shadeArea(img, 72, 48, 48, 4, 0.3);
+  for (const cx of [72, 116]) post(img, cx, 48, h - 8, WALL_WHITE, 4);
+  signBoard(img, "district", 96, 50, TEAK, YELLOW[4]!, { padX: 4, padY: 2, lit: false, trim: YELLOW[2] });
+  panelDoor(img, 84, 72, 24, h - 80, TEAK, TEAK, true);
   for (let i = 0; i < 3; i++) hline(img, 66 - i * 3, 126 + i * 3, h - 8 + i, CONCRETE[4 - i]!);
-  // flag pole (plain stripes)
-  vline(img, 186, 20, h - 5, STEEL[4]!);
-  [RED[3]!, WHITE, NAVY[3]!, NAVY[3]!, WHITE, RED[3]!].forEach((c, i) => hline(img, 174, 185, 20 + i, c));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  flagPole(img, 186, 14, h - 5);
+  pottedPlant(img, 62, h - 9, "flower", TERRA, 4); pottedPlant(img, 130, h - 9, "flower", TERRA, 8);
+  plinth(img, 0, w - 1, 3);
+  selOutline(img, 0.42);
   return img;
 }
 
+/** Company office บริษัท (128 × 160): stepped glass tower (mullions, spandrels, sky reflections), roof plant + mast, stone podium with lit sign and lobby. */
 function companyOffice(): RgbaImage {
   const w = 128, h = 160;
   const img = createImage(w, h);
-  for (let y = 8; y < h - 4; y++) for (let x = 4; x < w - 4; x++) {
-    const col = (x - 4) % 20, row = (y - 8) % 14;
-    const frame = col < 2 || row < 2;
-    setPx(img, x, y, frame ? pick(STEEL, 0.7 - (x / w) * 0.2, x, y, 0.3) : pick(GLASS, 0.72 - (y / h) * 0.35 - (col + row < 6 ? -0.15 : 0), x, y, 0.3));
-  }
-  markNight(img, "window-lit", () => { for (let y = 8; y < h - 30; y++) for (let x = 4; x < w - 4; x++) { const col = (x - 4) % 20, row = (y - 8) % 14; if (col >= 2 && row >= 2 && hash(Math.floor((x - 4) / 20), Math.floor((y - 8) / 14), 5) < 0.55) setPx(img, x, y, getPx(img, x, y)); } });
-  rect(img, 2, 4, w - 4, 4, STEEL[2]!);
-  hline(img, 2, w - 3, 4, STEEL[4]!);
-  board(img, "company", w / 2, h - 46, NAVY.slice(1), WHITE, 10, 3);
-  for (let y = h - 30; y < h - 4; y++) for (let x = 44; x < 84; x++) setPx(img, x, y, x === 63 || x === 64 ? STEEL[1]! : pick(GLASS, 0.75, x, y, 0.3));
-  ground(img, w, h);
-  selOutline(img, 0.4);
+  const CW = ramp("#16243a", "#203650", "#2e4c6c", "#44688a", "#6890ae", "#a0c4da");
+  const curtain = (x0: number, x1: number, y0: number, y1: number) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const col = (x - x0) % 8, row = (y - y0) % 12;
+      let c: Rgb;
+      if (col === 0) c = pick(STEEL, x === x0 ? 0.95 : 0.62, x, y, 0.2); // mullion
+      else if (row < 3) c = row === 0 ? STEEL[4]! : pick(STEEL, 0.32, x, y, 0.2); // spandrel band
+      else {
+        const sky = 0.78 - ((y - y0) / (y1 - y0)) * 0.42 - ((x - x0) / (x1 - x0)) * 0.12;
+        c = pick(CW, sky, x, y, 0.35);
+        const d = (x - x0 + (y - y0) * 0.55) % 46;
+        if (d > 6 && d < 13) c = mix(c, GLINT, 0.38); else if (d > 16 && d < 18) c = mix(c, GLINT, 0.22);
+        if (col === 7) c = mix(c, SHADOW, 0.25);
+      }
+      setPx(img, x, y, c);
+    }
+    markNight(img, "window-lit", () => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const col = (x - x0) % 8, row = (y - y0) % 12; if (col > 0 && row >= 3 && hash(Math.floor((x - x0) / 8), Math.floor((y - y0) / 12), 5) < 0.5) setPx(img, x, y, getPx(img, x, y)); } });
+  };
+  // mast + roof plant
+  vline(img, 64, 0, 12, STEEL[4]!); setPx(img, 64, 0, RED[4]!);
+  renderWall(img, 44, 10, 40, 8, CONCRETE, 9); for (let x = 46; x < 82; x += 3) vline(img, x, 12, 16, CONCRETE[2]!);
+  curtain(28, 99, 20, 48); bevel(img, 26, 18, 76, 3, STEEL, 3);
+  curtain(16, 111, 52, 116); bevel(img, 14, 49, 100, 3, STEEL, 3); shadeArea(img, 16, 52, 96, 2, 0.3);
+  // podium
+  renderWall(img, 4, 120, w - 8, h - 123, STONE, 15, []);
+  bevel(img, 2, 116, w - 4, 4, STONE, 4); shadeArea(img, 4, 120, w - 8, 2, 0.3);
+  signBoard(img, "company", w / 2, 123, NAVY, WHITE, { padX: 8, padY: 2, lit: true });
+  glassPane(img, 38, 140, 52, h - 144, (x, y) => (x % 13 === 0 ? STEEL[2]! : y > 12 ? STEEL[3]! : mix(rgb("#e4e0d8"), WARM[2]!, 0.2)), 0.3, "window-lit");
+  rect(img, 34, 136, 60, 3, STEEL[3]!); hline(img, 34, 93, 136, STEEL[5]!); shadeArea(img, 36, 139, 56, 3, 0.3);
+  for (const px of [14, 114]) pottedPlant(img, px, h - 4, "palm", CONCRETE, px);
+  wallLamp(img, 28, 138); wallLamp(img, 97, 138);
+  plinth(img, 0, w - 1, 4);
+  selOutline(img, 0.42);
   return img;
 }
 

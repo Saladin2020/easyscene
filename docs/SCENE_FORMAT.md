@@ -141,3 +141,13 @@ and recoloured parts are baked before the night grade (`<part>__c_<colour>…` i
 | Brick town backgrounds / tiles | `bg_sky_bright` · `bg_far_city_spires` · `bg_mid_utility_poles` · `tiles_city_sidewalk` (pale slabs over asphalt) |
 
 A canal is a pit that runs off the map edge: the sky layer's water band shows through it. Set a boat's `y` a few px below the ground line so it floats.
+
+
+## Walk and road bounds (Pixi export)
+
+A canal or beach is a pit of empty tiles; a `prop_pier` or `prop_fisher_hut` adds a thin deck over that pit. The Pixi export then includes:
+
+- `walk: { minX, maxX }` — solid ground plus pier / stilt decks. Runtimes should clamp side-view walking here so the player can stand on the pier but never in open water.
+- `road: { minX, maxX }` — solid ground only, not under a pier or jetty. Parked or driving vehicles stay on the road.
+
+Landlocked streets omit both fields (byte-for-byte with older exports). `composeScene` also snaps street vehicles that were placed on a pier or in water back onto the road.

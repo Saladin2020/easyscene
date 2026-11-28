@@ -6,6 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { RgbaImage } from "../shared/raster.js";
 import { characterTop, layerImage, layerWorldY, mapSize, propImage, propLayerOf, renderParallaxStrip, renderProps, renderScene, renderTilemap, type CharacterSprite, type SceneAssets } from "../shared/render.js";
+import { hasWaterOrPier, roadBounds, walkBounds } from "../shared/bounds.js";
 import { ATLAS_COLUMNS, atlasIndex, mergeRuns, resolveTile, tileShape } from "../shared/tiles.js";
 import type { BackgroundPart, CollisionRect, ExportPresetId, PropPart, SceneDoc, TilesetPart } from "../shared/types.js";
 import { facingRow, sceneCharacters, walkColumns } from "../shared/characters.js";
@@ -733,6 +734,8 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
         props,
         characters,
         collision: { solid: col.solid, oneWay: col.oneWay, slopes: col.slopes },
+        // walk/road only when the scene has a water pit or pier (landlocked towns stay byte-for-byte)
+        ...(hasWaterOrPier(doc, (id) => assets.meta(id)) ? { walk: walkBounds(doc, (id) => assets.meta(id)), road: roadBounds(doc, (id) => assets.meta(id)) } : {}),
         // optional, only on scenes that have them (old scenes export byte-for-byte as before)
         ...(doc.exits?.length ? { exits: doc.exits } : {}),
         ...(doc.town ? { town: doc.town } : {}),

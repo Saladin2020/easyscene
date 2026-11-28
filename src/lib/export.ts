@@ -738,6 +738,8 @@ export async function exportScene(root: string, opts: ExportOptions): Promise<Ex
         ...(hasWaterOrPier(doc, (id) => assets.meta(id)) ? { walk: walkBounds(doc, (id) => assets.meta(id)), road: roadBounds(doc, (id) => assets.meta(id)) } : {}),
         // optional, only on scenes that have them (old scenes export byte-for-byte as before)
         ...(doc.exits?.length ? { exits: doc.exits } : {}),
+        ...(doc.doors?.length ? { doors: doc.doors } : {}),
+        ...(doc.interior ? { interior: doc.interior } : {}),
         ...(doc.town ? { town: doc.town } : {}),
         // only with --night: the day file links its night twin, the night file says what it is
         ...(opts.night && !night ? { night: `${dayBase}_night.pixi.json` } : {}),

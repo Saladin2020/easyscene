@@ -1,0 +1,199 @@
+{
+  "buildings": [
+    {
+      "building": "prop_bld_shophouse_grocery",
+      "scene": "shop_interior",
+      "type": "grocery",
+      "seed": 1,
+      "part": "prop_int_grocery",
+      "counter": "prop_int_grocery_counter",
+      "kind": "shop",
+      "sign": "ร้านโชห่วย"
+    },
+    {
+      "building": "prop_bld_mini_mart",
+      "scene": "shop_interior",
+      "type": "grocery",
+      "seed": 1,
+      "part": "prop_int_grocery",
+      "counter": "prop_int_grocery_counter",
+      "kind": "shop",
+      "sign": "มินิมาร์ท"
+    },
+    {
+      "building": "prop_bld_noodle_shop",
+      "scene": "int_noodle",
+      "type": "noodle",
+      "seed": 1,
+      "part": "prop_int_noodle",
+      "counter": "prop_int_noodle_counter",
+      "kind": "shop",
+      "sign": "ร้านก๋วยเตี๋ยว"
+    },
+    {
+      "building": "prop_bld_roti_teashop",
+      "scene": "int_roti",
+      "type": "roti",
+      "seed": 1,
+      "part": "prop_int_roti",
+      "counter": "prop_int_roti_counter",
+      "kind": "shop",
+      "halal": true,
+      "sign": "ร้านน้ำชาโรตี"
+    },
+    {
+      "building": "prop_bld_shophouse_2f",
+      "scene": "int_cafe",
+      "type": "cafe",
+      "seed": 1,
+      "part": "prop_int_cafe",
+      "counter": "prop_int_cafe_counter",
+      "kind": "shop",
+      "sign": "ร้านกาแฟ"
+    },
+    {
+      "building": "prop_bld_shophouse_3f_gold",
+      "scene": "int_gold",
+      "type": "gold",
+      "seed": 1,
+      "part": "prop_int_gold",
+      "counter": "prop_int_gold_counter",
+      "kind": "shop",
+      "sign": "ร้านทอง"
+    },
+    {
+      "building": "prop_bld_shophouse_clothes",
+      "scene": "int_clothes",
+      "type": "clothes",
+      "seed": 1,
+      "part": "prop_int_clothes",
+      "counter": "prop_int_clothes_counter",
+      "kind": "shop",
+      "sign": "ร้านเสื้อผ้า"
+    },
+    {
+      "building": "prop_bld_shophouse_stationery",
+      "scene": "int_stationery",
+      "type": "stationery",
+      "seed": 1,
+      "part": "prop_int_stationery",
+      "counter": "prop_int_stationery_counter",
+      "kind": "shop",
+      "sign": "ร้านเครื่องเขียน"
+    },
+    {
+      "building": "prop_bld_house_thai_wood",
+      "scene": "int_house_thai",
+      "type": "house_thai",
+      "seed": 1,
+      "part": "prop_int_house_thai",
+      "kind": "house",
+      "sign": "เรือนไม้ไทย"
+    },
+    {
+      "building": "prop_bld_thai_house",
+      "scene": "int_house_thai_s3",
+      "type": "house_thai",
+      "seed": 3,
+      "part": "prop_int_house_thai",
+      "kind": "house",
+      "sign": "เรือนไม้ไทย"
+    },
+    {
+      "building": "prop_bld_house_modern",
+      "scene": "int_house_modern",
+      "type": "house_modern",
+      "seed": 1,
+      "part": "prop_int_house_modern",
+      "kind": "house",
+      "sign": "บ้านสมัยใหม่"
+    },
+    {
+      "building": "prop_bld_malay_house",
+      "scene": "int_house_teal",
+      "type": "house_teal",
+      "seed": 1,
+      "part": "prop_int_house_teal",
+      "kind": "house",
+      "sign": "บ้านไม้สีเขียวน้ำทะเล"
+    },
+    {
+      "building": "prop_bld_house_kampung",
+      "scene": "int_house_kampung",
+      "type": "house_kampung",
+      "seed": 1,
+      "part": "prop_int_house_kampung",
+      "kind": "house",
+      "sign": "บ้านกำปง"
+    },
+    {
+      "building": "prop_bld_shophouse_chinese",
+      "scene": "int_house_chinese",
+      "type": "house_chinese",
+      "seed": 1,
+      "part": "prop_int_house_chinese",
+      "kind": "house",
+      "sign": "ห้องนั่งเล่นตึกแถว"
+    },
+    {
+      "building": "prop_bld_hospital",
+      "scene": "int_hospital",
+      "type": "hospital",
+      "seed": 1,
+      "part": "prop_int_hospital",
+      "counter": "prop_int_hospital_counter",
+      "kind": "civic",
+      "sign": "โรงพยาบาล"
+    },
+    {
+      "building": "prop_bld_police",
+      "scene": "int_police",
+      "type": "police",
+      "seed": 1,
+      "part": "prop_int_police",
+      "counter": "prop_int_police_counter",
+      "kind": "civic",
+      "sign": "สถานีตำรวจ"
+    },
+    {
+      "building": "prop_bld_post_office",
+      "scene": "int_post",
+      "type": "post",
+      "seed": 1,
+      "part": "prop_int_post",
+      "counter": "prop_int_post_counter",
+      "kind": "civic",
+      "sign": "ไปรษณีย์"
+    },
+    {
+      "building": "prop_bld_bank",
+      "scene": "int_bank",
+      "type": "bank",
+      "seed": 1,
+      "part": "prop_int_bank",
+      "counter": "prop_int_bank_counter",
+      "kind": "civic",
+      "sign": "ธนาคาร"
+    },
+    {
+      "building": "prop_bld_district_office",
+      "scene": "int_district",
+      "type": "district",
+      "seed": 1,
+      "part": "prop_int_district",
+      "counter": "prop_int_district_counter",
+      "kind": "civic",
+      "sign": "ที่ว่าการอำเภอ"
+    },
+    {
+      "building": "prop_bld_company_office",
+      "scene": "int_office",
+      "type": "office",
+      "seed": 1,
+      "part": "prop_int_office",
+      "counter": "prop_int_office_counter",
+      "kind": "civic",
+      "sign": "สำนักงาน"
+    }
+  ]
+}

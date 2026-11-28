@@ -69,6 +69,11 @@ export interface PropPart extends PartMetaBase {
    * sprite must mirror it when the travel direction differs (`noseScaleX(facing, vx)`), or it flies backwards.
    */
   facing?: Facing;
+  /**
+   * Default walk-in interior scene id (Easy Interior or a hand-made Easy Scene interior).
+   * Closed twins omit this; look the open building up in `interiorOf()`.
+   */
+  interior?: string;
 }
 
 export type Facing = "left" | "right";
@@ -188,6 +193,10 @@ export interface SceneDoc {
   characters?: SceneCharacter[];
   /** Ways out of the scene (optional, additive to easyscene/1): e.g. both street ends back to an overworld map. */
   exits?: SceneExit[];
+  /** Interior doorway (optional, additive): pixel box of the painted door / exit. */
+  doors?: SceneDoor[];
+  /** Easy Interior metadata when this scene is a generated (or hand-made) walk-in room. */
+  interior?: SceneInterior;
   /** Set on scenes made for an overworld town (Easy Tilemap `overworld.towns[]`). */
   town?: SceneTown;
   createdAt?: string;
@@ -203,6 +212,23 @@ export interface SceneExit {
   at?: string;
 }
 export const EXIT_SIDES = ["left", "right"] as const;
+
+/** A painted doorway inside an interior (or any scene), in scene px. */
+export interface SceneDoor {
+  x: number;
+  w: number;
+  side?: "left" | "right";
+  kind?: "exit" | "inner";
+  to?: string;
+}
+
+/** Written by Easy Interior (and understood by Easy Kit / the demo). */
+export interface SceneInterior {
+  type: string;
+  seed?: number;
+  kind?: "shop" | "house" | "civic" | "transit";
+  halal?: boolean;
+}
 
 export interface SceneTown {
   kind: string;

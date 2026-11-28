@@ -15,15 +15,28 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      EASYINTERIOR_HOME: ${{ github.workspace }}/.deps/easyinterior
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Saladin2020/easyinterior
+          ref: master
+          path: .deps/easyinterior
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            .deps/easyinterior/package-lock.json
+      - name: Build Easy Interior
+        working-directory: .deps/easyinterior
+        run: npm ci && npm run build
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
       - name: MCP + CLI smoke tests
-        run: npx tsx src/cli.ts init && npm run smoke
+        run: node dist/cli.js init && npm run smoke

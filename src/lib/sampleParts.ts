@@ -18,6 +18,7 @@ import path from "node:path";
 import { createImage, type RgbaImage } from "../shared/raster.js";
 import { ATLAS_COLUMNS, ATLAS_ROWS, MASK_E, MASK_N, MASK_S, MASK_W } from "../shared/tiles.js";
 import { TOWN_MORE_DRAW } from "./sampleTownMore.js";
+import { interiorOf } from "../shared/buildingInteriors.js";
 import type { BackgroundPart, Facing, LayerBand, PartMeta, PropCategory, PropLayer, PropPart, Rect, ShopPartMeta, TilesetPart } from "../shared/types.js";
 import { decodePng, writePng } from "./png.js";
 import { NIGHT_MASK_FILE } from "../shared/night.js";
@@ -1235,8 +1236,20 @@ function townMoreDefs(): SampleDef[] {
   ];
 }
 
+
+/** Stamp the Easy Interior / catalog scene id on open buildings that have a walk-in room. */
+function withInteriors(defs: SampleDef[]): SampleDef[] {
+  return defs.map((d) => {
+    const row = interiorOf(d.meta.id);
+    if (!row) return d;
+    const meta = d.meta as PropPart;
+    if (meta.shop?.open) return d; // closed twin
+    return { ...d, meta: { ...meta, interior: row.scene } };
+  });
+}
+
 export function sampleDefs(): SampleDef[] {
-  return withShopTwins([
+  return withInteriors(withShopTwins([
     bg("bg_sky_day", "Sky · day", "sky", 0.05, "#8fc7e8", ["sky", "day"], skyDay),
     bg("bg_sky_dusk", "Sky · dusk", "sky", 0.03, "#c4587a", ["sky", "evening", "sunset"], skyDusk),
     bg("bg_sky_night", "Sky · night", "sky", 0.02, "#2c3a6e", ["sky", "night", "moon", "stars"], skyNight),
@@ -1307,7 +1320,7 @@ export function sampleDefs(): SampleDef[] {
     faced(prop("prop_car_hatch_red", "Parked hatchback (red)", 56, 30, "front", "#b82c28", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.redHatch, undefined, "street"), "right"),
     faced(prop("prop_car_sedan_dark", "Parked sedan (dark)", 72, 28, "front", "#343c4c", ["car", "vehicle", "city", "brick-town", "road"], BRICK_DRAW.darkSedan, undefined, "street"), "right"),
     prop("prop_city_road", "Road strip (curb + lanes)", 128, ROAD_H, "front", "#2c2c34", ["road", "asphalt", "curb", "lane", "city", "brick-town"], BRICK_DRAW.roadStrip, undefined, "street"),
-  ]);
+  ]));
 }
 
 const KIND_DIR = { background: "backgrounds", tileset: "tilesets", prop: "props" } as const;

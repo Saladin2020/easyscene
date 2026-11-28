@@ -12,3 +12,4 @@ easyscene.allowed-dirs.json
 .env.*
 .cursor/
 *.local.json
+.deps/

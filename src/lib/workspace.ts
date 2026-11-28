@@ -59,7 +59,33 @@ export async function initWorkspace(cwd = process.cwd(), options?: { forceSample
   await stampInteriorFields(root);
   const imported = importEasyInteriors(root);
   if (imported && "error" in imported) console.warn(imported.error);
+  await syncPartCredits(root);
   return root;
+}
+
+/** Keep parts/CREDITS.json in line with every part.json (including rooms imported from Easy Interior). */
+export async function syncPartCredits(root: string): Promise<number> {
+  const creditsPath = path.join(root, "parts", "CREDITS.json");
+  const parts = await loadParts(root);
+  type Row = { id: string; kind: string; name?: string; license?: string };
+  let credits: { note?: string; signText?: string; license?: string; credit?: string; parts: Row[] } = { license: "CC0-1.0", parts: [] };
+  if (await exists(creditsPath)) {
+    try { credits = { ...credits, ...JSON.parse(await readFile(creditsPath, "utf8")) }; } catch { /* start fresh */ }
+    if (!Array.isArray(credits.parts)) credits.parts = [];
+  }
+  const have = new Set(credits.parts.map((p) => p.id));
+  let n = 0;
+  for (const p of parts) {
+    if (have.has(p.id)) continue;
+    credits.parts.push({ id: p.id, kind: p.kind, name: p.name, license: p.license ?? "CC0-1.0" });
+    have.add(p.id);
+    n++;
+  }
+  if (n > 0 || !(await exists(creditsPath))) {
+    await writeFile(creditsPath, `${JSON.stringify(credits, null, 2)}
+`);
+  }
+  return n;
 }
 
 /** Resolve the Easy Interior CLI if the tool is installed beside Easy Scene or EASYINTERIOR_HOME is set. */

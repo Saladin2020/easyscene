@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAssets } from "../src/lib/compose.js";
 import { readPng } from "../src/lib/png.js";
-import { loadParts, loadScenes, partImagePath } from "../src/lib/workspace.js";
+import { loadParts, loadScenes, partImagePath, resolveEasyInteriorCli } from "../src/lib/workspace.js";
 import { composeScene } from "../src/shared/scene.js";
 import { renderScene } from "../src/shared/render.js";
 import { tempWorkspace } from "./helpers.js";
@@ -27,6 +27,16 @@ describe("sample part set", () => {
     }
     const credits = JSON.parse(await readFile(path.join(root, "parts", "CREDITS.json"), "utf8"));
     expect(credits.parts).toHaveLength(parts.length);
+  });
+
+  it("imports Easy Interior rooms when the CLI is installed", async () => {
+    if (!resolveEasyInteriorCli()) return;
+    const ids = new Set((await loadParts(root)).map((p) => p.id));
+    expect(ids.has("prop_int_hospital")).toBe(true);
+    expect(ids.has("prop_int_noodle")).toBe(true);
+    expect(ids.has("prop_int_house_thai")).toBe(true);
+    const scenes = await loadScenes(root);
+    expect(scenes.some((s) => s.id === "int_hospital")).toBe(true);
   });
 
   it("every background loops seamlessly: moving the camera one full loop gives identical pixels", async () => {

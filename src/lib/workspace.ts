@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { access, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DEFAULT_CONFIG, type EasySceneConfig, type PartMeta, type SceneDoc, type SceneSummary, type WorkspaceSummary } from "../shared/types.js";
 import { demoScenes } from "./demoScenes.js";
 import { partDir, writeSampleParts } from "./sampleParts.js";
+import { BUILDING_INTERIORS } from "../shared/buildingInteriors.js";
 
 const CONFIG_NAME = "easyscene.config.json";
 /** Folders the user picked; writes outside the workspace must be under one. */
@@ -50,10 +53,54 @@ export async function initWorkspace(cwd = process.cwd(), options?: { forceSample
   const hasScenes = (await readdir(scenesDir)).some((f) => f.endsWith(".json"));
   if (!hasScenes || options?.forceSamples) {
     for (const demo of demoScenes()) {
-      await writeFile(path.join(scenesDir, `${demo.id}.json`), `${JSON.stringify(demo, null, 2)}\n`);
+      await writeFile(path.join(scenesDir, `${demo.id}.json`), `${JSON.stringify(demo, null, 2)}` + "\n");
     }
   }
+  await stampInteriorFields(root);
+  const imported = importEasyInteriors(root);
+  if (imported && "error" in imported) console.warn(imported.error);
   return root;
+}
+
+/** Resolve the Easy Interior CLI if the tool is installed beside Easy Scene or EASYINTERIOR_HOME is set. */
+export function resolveEasyInteriorCli(): string | null {
+  const env = process.env.EASYINTERIOR_HOME?.trim();
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    env ? path.join(env, "dist", "cli.js") : "",
+    path.resolve(here, "..", "..", "..", "easyinterior", "dist", "cli.js"),
+    path.resolve(here, "..", "..", "easyinterior", "dist", "cli.js"),
+  ].filter(Boolean);
+  return candidates.find((c) => existsSync(c)) ?? null;
+}
+
+/** Run `easyinterior init` into this workspace so walk-in room parts and scenes appear. No-op if the tool is missing. */
+export function importEasyInteriors(root: string): { ok: true; log: string } | { ok: false; error: string } | null {
+  const cli = resolveEasyInteriorCli();
+  if (!cli) return null;
+  const r = spawnSync(process.execPath, [cli, "init", "--workspace", root], { encoding: "utf8" });
+  if (r.status !== 0) return { ok: false, error: `easyinterior init failed: ${(r.stderr || r.stdout || "").trim()}` };
+  return { ok: true, log: r.stdout };
+}
+
+/** Add `interior` to existing building part.json files without touching the art (workspace upgrades). */
+export async function stampInteriorFields(root: string): Promise<number> {
+  let n = 0;
+  for (const row of BUILDING_INTERIORS) {
+    const file = path.join(root, "parts", "props", row.building, "part.json");
+    if (!(await exists(file))) continue;
+    try {
+      const meta = JSON.parse(await readFile(file, "utf8")) as { interior?: string; shop?: { open?: string } };
+      if (meta.shop?.open) continue;
+      if (meta.interior === row.scene) continue;
+      meta.interior = row.scene;
+      await writeFile(file, `${JSON.stringify(meta, null, 2)}` + "\n");
+      n++;
+    } catch {
+      // leave a corrupt part.json alone
+    }
+  }
+  return n;
 }
 
 export async function loadConfig(root: string): Promise<EasySceneConfig> {

@@ -18,6 +18,8 @@ import {
   type PropLayer,
   type SceneCharacter,
   type SceneDoc,
+  type SceneDoor,
+  type SceneInterior,
   type SceneExit,
   type SceneTown,
   type SceneLayer,
@@ -80,6 +82,8 @@ export interface ComposeSceneInput {
   character?: { sheet: string; x?: number };
   characters?: SceneCharacter[];
   exits?: SceneExit[];
+  doors?: SceneDoor[];
+  interior?: SceneInterior;
   town?: SceneTown;
 }
 
@@ -318,6 +322,18 @@ export function composeScene(
       exits.push({ side: e.side, to: e.to.trim(), ...(typeof e.at === "string" && e.at.trim() ? { at: e.at.trim() } : {}) });
     }
     if (exits.length) scene.exits = exits;
+  }
+  if (Array.isArray(input.doors) && input.doors.length) {
+    const doors: SceneDoor[] = [];
+    for (const d of input.doors) {
+      if (!d || !Number.isFinite(d.x) || !Number.isFinite(d.w) || d.w <= 0) continue;
+      doors.push({ x: Math.round(d.x), w: Math.round(d.w), ...(d.side ? { side: d.side } : {}), ...(d.kind ? { kind: d.kind } : {}), ...(d.to ? { to: d.to } : {}) });
+    }
+    if (doors.length) scene.doors = doors;
+  }
+  if (input.interior && typeof input.interior.type === "string") {
+    const i = input.interior;
+    scene.interior = { type: i.type, ...(i.seed != null ? { seed: i.seed } : {}), ...(i.kind ? { kind: i.kind } : {}), ...(i.halal ? { halal: true } : {}) };
   }
   if (input.town && typeof input.town.kind === "string") {
     const t = input.town;

@@ -3,6 +3,7 @@
  * get back a normalized SceneDoc plus human-readable warnings (never throws on
  * unknown parts — it drops them, like Easy Sprite's compose).
  */
+import { clampVehiclesToRoad } from "./bounds.js";
 import { normalizeCharacters } from "./characters.js";
 import { dressStreet, generateStreet, type StreetGenerateSpec } from "./streetGen.js";
 import { isHex } from "./raster.js";
@@ -322,6 +323,8 @@ export function composeScene(
     const t = input.town;
     scene.town = { kind: t.kind, ...(t.id ? { id: t.id } : {}), ...(t.map ? { map: t.map } : {}), ...(t.name?.th && t.name?.en ? { name: { th: t.name.th, en: t.name.en, ...(t.name.ms ? { ms: t.name.ms } : {}) } } : {}) };
   }
+  const moved = clampVehiclesToRoad(scene, parts);
+  for (const m of moved) warnings.push(`Moved ${m.part} off water/pier (${m.from} → ${m.to})`);
   return { scene, warnings };
 }
 
